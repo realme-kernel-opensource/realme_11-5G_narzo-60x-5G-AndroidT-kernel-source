@@ -3719,6 +3719,26 @@ static int __maybe_unused mtk_smi_common_suspend(struct device *dev)
 	return 0;
 }
 
+int mtk_smi_common_in_mminfra_chk(struct device *dev)
+{
+	struct mtk_smi *common;
+	u32 val;
+
+	if (unlikely(!dev))
+		return -EINVAL;
+
+	common = dev_get_drvdata(dev);
+	val = readl_relaxed(common->base + SMI_DEBUG_MISC);
+	if (val != 0x1) {
+		pr_notice("%s: common:%d %#x=%#x\n", __func__,
+				common->commid, SMI_DEBUG_MISC, val);
+		return 1;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(mtk_smi_common_in_mminfra_chk);
+
 static const struct dev_pm_ops smi_common_pm_ops = {
 	SET_RUNTIME_PM_OPS(mtk_smi_common_suspend, mtk_smi_common_resume, NULL)
 };

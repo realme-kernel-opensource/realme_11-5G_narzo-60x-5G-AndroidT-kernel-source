@@ -40,6 +40,14 @@ struct mminfra_dbg {
 	struct notifier_block nb;
 };
 
+struct mminfra_dbg_ex {
+	u16 smi_comm;
+	u16 busy_cnt;
+	u64 busy_t;
+	u16 apsrc_off_cnt;
+	u64 apsrc_off_t;
+};
+
 static struct notifier_block mtk_pd_notifier;
 static struct scmi_tinysys_info_st *tinfo;
 static int feature_id;
@@ -47,6 +55,7 @@ static struct clk *mminfra_clk[MMINFRA_MAX_CLK_NUM];
 static atomic_t clk_ref_cnt = ATOMIC_INIT(0);
 static struct device *dev;
 static struct mminfra_dbg *dbg;
+static struct mminfra_dbg_ex *dbg_ex;
 static u32 mminfra_bkrs;
 static u32 bkrs_reg_pa;
 
@@ -204,7 +213,7 @@ static int mtk_mminfra_pd_callback(struct notifier_block *nb,
 	int count;
 	void __iomem *test_base;
 	static u32 bk_val;
-	u32 val;
+	u32 val, i, ret;
 
 	if (flags == GENPD_NOTIFY_ON) {
 		mminfra_clk_set(true);
@@ -235,6 +244,21 @@ static int mtk_mminfra_pd_callback(struct notifier_block *nb,
 		pr_notice("%s: enable clk ref_cnt=%d, enable gce apsrc: %#x=%#x\n",
 			__func__, count, GCE_BASE + GCE_GCTL_VALUE,
 			readl(dbg->gce_base + GCE_GCTL_VALUE));
+
+		for (i = 0; i < MAX_SMI_COMM_NUM; i++) {
+			ret = mtk_smi_common_in_mminfra_chk(dbg->comm_dev[i]);
+			if (ret) {
+				dbg_ex->smi_comm = i;
+				dbg_ex->busy_cnt++;
+				dbg_ex->busy_t = sched_clock();
+			}
+			ret = 0;
+		}
+		if (readl(dbg->gce_base + GCE_GCTL_VALUE) != 0x20002) {
+			dbg_ex->apsrc_off_cnt++;
+			dbg_ex->apsrc_off_t = sched_clock();
+		}
+
 	} else if (flags == GENPD_NOTIFY_PRE_OFF) {
 		writel(0, dbg->gce_base + GCE_GCTL_VALUE);
 		pr_notice("%s: disable gce apsrc: %#x=%#x\n",
@@ -451,6 +475,17 @@ static irqreturn_t mminfra_irq_handler(int irq, void *data)
 		return IRQ_HANDLED;
 	}
 
+	pr_notice("%s: gce apsrc: %#x=%#x\n",
+		__func__, GCE_BASE + GCE_GCTL_VALUE, readl(dbg->gce_base + GCE_GCTL_VALUE));
+
+	if (dbg_ex->busy_t)
+		pr_notice("%s: smi busy in on_cb, comm:%d cnt:%d time:%llu\n", __func__,
+			dbg_ex->smi_comm, dbg_ex->busy_cnt, dbg_ex->busy_t);
+
+	if (dbg_ex->apsrc_off_t)
+		pr_notice("%s: apsrc off in on_cb, cnt:%d time:%llu\n", __func__,
+			dbg_ex->apsrc_off_cnt, dbg_ex->apsrc_off_t);
+
 	cmdq_util_mminfra_cmd(1);
 
 	if (!aee_dump) {
@@ -496,6 +531,10 @@ static int mminfra_debug_probe(struct platform_device *pdev)
 
 	dbg = kzalloc(sizeof(*dbg), GFP_KERNEL);
 	if (!dbg)
+		return -ENOMEM;
+
+	dbg_ex = kzalloc(sizeof(*dbg_ex), GFP_KERNEL);
+	if (!dbg_ex)
 		return -ENOMEM;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
