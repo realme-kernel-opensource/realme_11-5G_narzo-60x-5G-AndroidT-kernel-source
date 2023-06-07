@@ -997,6 +997,20 @@ int disp_ccorr_set_RGB_Gain(struct mtk_ddp_comp *comp,
 	return ret;
 }
 
+static bool is_doze_active(void)
+{
+	struct drm_crtc *crtc;
+	struct mtk_crtc_state *mtk_state;
+
+	if (!default_comp)
+		return false;
+	crtc = &default_comp->mtk_crtc->base;
+	mtk_state = to_mtk_crtc_state(crtc->state);
+	if (mtk_state->prop_val[CRTC_PROP_DOZE_ACTIVE])
+		return true;
+	return false;
+}
+
 int mtk_drm_ioctl_set_ccorr(struct drm_device *dev, void *data,
 		struct drm_file *file_priv)
 {
@@ -1006,6 +1020,16 @@ int mtk_drm_ioctl_set_ccorr(struct drm_device *dev, void *data,
 	struct DRM_DISP_CCORR_COEF_T *ccorr_config = data;
 	int ret;
 
+	if (m_new_pq_persist_property[DISP_PQ_CCORR_SILKY_BRIGHTNESS] &&
+		is_doze_active() &&
+		ccorr_config->silky_bright_flag == 1 &&
+		ccorr_config->FinalBacklight != 0) {
+		DDPINFO("%s, in aod state, brightness = %d",
+				__func__, ccorr_config->FinalBacklight);
+		mtk_leds_brightness_set("lcd-backlight",
+			ccorr_config->FinalBacklight, 0, (0X01<<SET_BACKLIGHT_LEVEL));
+		return 0;
+	}
 	if (ccorr_config->hw_id != DRM_DISP_CCORR_TOTAL) {
 		DDPINFO("hw_id = %d", ccorr_config->hw_id);
 		if (ccorr_config->hw_id == DRM_DISP_CCORR1) {

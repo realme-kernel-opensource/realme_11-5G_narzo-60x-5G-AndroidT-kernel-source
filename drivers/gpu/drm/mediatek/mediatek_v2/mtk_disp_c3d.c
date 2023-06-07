@@ -643,6 +643,20 @@ int mtk_drm_ioctl_c3d_eventctl(struct drm_device *dev, void *data,
 	return ret;
 }
 
+static bool is_doze_active(void)
+{
+	struct drm_crtc *crtc;
+	struct mtk_crtc_state *mtk_state;
+
+	if (!default_comp)
+		return false;
+	crtc = &default_comp->mtk_crtc->base;
+	mtk_state = to_mtk_crtc_state(crtc->state);
+	if (mtk_state->prop_val[CRTC_PROP_DOZE_ACTIVE])
+		return true;
+	return false;
+}
+
 int mtk_drm_ioctl_c3d_set_lut(struct drm_device *dev, void *data,
 			struct drm_file *file_priv)
 {
@@ -653,6 +667,10 @@ int mtk_drm_ioctl_c3d_set_lut(struct drm_device *dev, void *data,
 	struct drm_crtc *crtc = private->crtc[0];
 	struct mtk_drm_crtc *mtk_crtc = to_mtk_crtc(crtc);
 
+	if (is_doze_active()) {
+		pr_notice("%s, in doze state\n", __func__);
+		return 0;
+	}
 	gSkipUpdateSram = false;
 
 	C3DAPI_LOG("line: %d\n", __LINE__);
