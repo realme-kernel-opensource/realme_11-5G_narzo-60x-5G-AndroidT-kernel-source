@@ -90,6 +90,7 @@ bool g_profile_log;
 
 bool g_irq_log;
 bool g_trace_log;
+bool g_trace_log_lv2;
 unsigned int mipi_volt;
 unsigned int disp_met_en;
 unsigned int disp_met_condition;
@@ -2515,10 +2516,16 @@ static void process_dbg_opt(const char *opt)
 		else if (strncmp(opt + 8, "off", 3) == 0)
 			g_profile_log = 0;
 	} else if (strncmp(opt, "trace:", 6) == 0) {
-		if (strncmp(opt + 6, "on", 2) == 0)
+		if (strncmp(opt + 6, "on", 2) == 0) {
 			g_trace_log = 1;
-		else if (strncmp(opt + 6, "off", 3) == 0)
+			g_trace_log_lv2 = 0;
+		} else if (strncmp(opt + 6, "on2", 3) == 0) {
+			g_trace_log = 1;
+			g_trace_log_lv2 = 1;
+		} else if (strncmp(opt + 6, "off", 3) == 0) {
 			g_trace_log = 0;
+			g_trace_log_lv2 = 0;
+		}
 	} else if (strncmp(opt, "logger:", 7) == 0) {
 		if (strncmp(opt + 7, "on", 2) == 0) {
 			init_log_buffer();

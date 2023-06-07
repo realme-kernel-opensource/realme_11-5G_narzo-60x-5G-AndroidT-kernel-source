@@ -561,6 +561,7 @@ int mtk_release_present_fence(unsigned int session_id, unsigned int fence_idx, k
 		idx = 3;
 
 	CRTC_MMP_MARK(idx, release_present_fence, 0, fence_idx);
+	drm_trace_tag_value("release_present_fence", fence_idx);
 
 	mtk_drm_trace_end();
 

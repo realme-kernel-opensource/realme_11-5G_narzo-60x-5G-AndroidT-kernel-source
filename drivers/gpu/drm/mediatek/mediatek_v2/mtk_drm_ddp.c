@@ -28,6 +28,8 @@
 #include "mtk_disp_gamma.h"
 #include "mtk_disp_oddmr/mtk_disp_oddmr.h"
 #include "platform/mtk_drm_platform.h"
+#include "mtk_drm_trace.h"
+
 #ifdef CONFIG_MTK_SMI_EXT
 #include "smi_public.h"
 #endif
@@ -15802,6 +15804,8 @@ static irqreturn_t mtk_disp_mutex_irq_handler(int irq, void *dev_id)
 		if (val & (0x1 << m_id)) {
 			DDPIRQ("[IRQ] mutex%d sof!\n", m_id);
 			DRM_MMP_MARK(mutex[m_id], val, 0);
+			if (m_id == 0)
+				drm_trace_tag_mark("mutex0_sof");
 #if IS_ENABLED(CONFIG_MTK_TINYSYS_VCP_SUPPORT)
 			if (m_id == 0) {
 				//hint vcp display SOF
