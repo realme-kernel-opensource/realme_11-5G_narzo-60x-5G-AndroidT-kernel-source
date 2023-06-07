@@ -9051,22 +9051,30 @@ void mtk_cam_stop_ctx(struct mtk_cam_ctx *ctx, struct media_entity *entity)
 
 	if (!cam->streaming_ctx) {
 		struct v4l2_subdev *sd;
+		struct mtk_cam_scen *scen_active = NULL;
 
-		v4l2_device_for_each_subdev(sd, &cam->v4l2_dev) {
-			if (sd->entity.function == MEDIA_ENT_F_VID_IF_BRIDGE) {
-				int ret;
+		if (mtk_cam_ctx_has_raw(ctx))
+			scen_active = &ctx->pipe->scen_active;
+		if (mtk_cam_scen_is_ext_isp(scen_active)) {
+			dev_info(cam->dev, "not to stream off seninf %s for preisp at stop ctx\n",
+					 ctx->seninf->name);
+		} else {
+			v4l2_device_for_each_subdev(sd, &cam->v4l2_dev) {
+				if (sd->entity.function == MEDIA_ENT_F_VID_IF_BRIDGE) {
+					int ret;
 
-				ret = v4l2_subdev_call(sd, video, s_stream, 0);
-				if (ret)
-					dev_info(cam->dev,
-						 "failed to streamoff %s:%d\n",
-						 sd->name, ret);
-				sd->entity.stream_count = 0;
-				sd->entity.pipe = NULL;
-			} else if (sd->entity.function ==
-						MEDIA_ENT_F_CAM_SENSOR) {
-				sd->entity.stream_count = 0;
-				sd->entity.pipe = NULL;
+					ret = v4l2_subdev_call(sd, video, s_stream, 0);
+					if (ret)
+						dev_info(cam->dev,
+							 "failed to streamoff %s:%d\n",
+							 sd->name, ret);
+					sd->entity.stream_count = 0;
+					sd->entity.pipe = NULL;
+				} else if (sd->entity.function ==
+							MEDIA_ENT_F_CAM_SENSOR) {
+					sd->entity.stream_count = 0;
+					sd->entity.pipe = NULL;
+				}
 			}
 		}
 	}
