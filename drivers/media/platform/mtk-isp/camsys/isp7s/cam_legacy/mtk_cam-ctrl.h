@@ -145,6 +145,8 @@ struct mtk_camsys_sensor_ctrl {
 	struct mtk_cam_request *link_change_req;
 	/* ext isp case sof source from PD */
 	u32 extisp_sof_source;
+	/* ext isp case detect repeated key */
+	u32 extisp_sv_key;
 };
 
 enum {

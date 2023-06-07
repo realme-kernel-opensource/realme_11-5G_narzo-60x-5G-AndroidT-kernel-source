@@ -6369,6 +6369,7 @@ int mtk_camsys_ctrl_start(struct mtk_cam_ctx *ctx)
 			camsys_sensor_ctrl->extisp_sof_source =
 				EXTISP_SOF_SOURCE_META;
 		}
+		camsys_sensor_ctrl->extisp_sv_key = 0;
 		dev_info(ctx->cam->dev, "[%s:extisp] ctx:%d/raw_dev:0x%x extisp_sof_source:%d\n",
 		__func__, ctx->stream_id, ctx->used_raw_dev,
 		camsys_sensor_ctrl->extisp_sof_source);
@@ -6493,7 +6494,6 @@ void mtk_cam_extisp_sv_frame_start(struct mtk_cam_ctx *ctx,
 	u64 time_boot = irq_info->ts_ns;
 	u64 time_mono = ktime_get_ns();
 	u64 time_threadedirq_delay = 0;
-	int inner_key = -1;
 
 	raw_dev = get_master_raw_dev(ctx->cam, ctx->pipe);
 	/* touch watchdog */
@@ -6528,7 +6528,7 @@ void mtk_cam_extisp_sv_frame_start(struct mtk_cam_ctx *ctx,
 				dequeued_frame_seq_no;
 			/* handle sv timestamp in stream_data */
 			mtk_cam_extisp_handle_sv_tstamp(ctx, stream_data, irq_info);
-			inner_key = stream_data->state.sof_cnt_key;
+			sensor_ctrl->extisp_sv_key = stream_data->state.sof_cnt_key;
 		}
 		/* Find to-be-set element*/
 		if (state_temp->estate == E_STATE_EXTISP_SENSOR) {
@@ -6542,9 +6542,10 @@ void mtk_cam_extisp_sv_frame_start(struct mtk_cam_ctx *ctx,
 				dev_info(ctx->cam->dev, "[%s] vf_reset_cnt:%d\n",
 					__func__, raw_dev->vf_reset_cnt);
 				raw_dev->vf_reset_cnt--;
-			} else if (inner_key == irq_info->tg_cnt && inner_key > 0) {
+			} else if (sensor_ctrl->extisp_sv_key == irq_info->tg_cnt &&
+				sensor_ctrl->extisp_sv_key > 0) {
 				dev_info(ctx->cam->dev, "[%s] repeated key: inner:%d, tg_cnt:%d\n",
-					__func__, inner_key, irq_info->tg_cnt);
+					__func__, sensor_ctrl->extisp_sv_key, irq_info->tg_cnt);
 			} else {
 				state_sensor = state_temp;
 			}
