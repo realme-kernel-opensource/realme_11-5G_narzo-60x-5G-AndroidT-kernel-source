@@ -467,22 +467,19 @@ static int mtk_gamma_12bit_set_lut(struct mtk_ddp_comp *comp,
 
 	DDPINFO("%s\n", __func__);
 
-	gamma_lut = kmalloc(sizeof(struct DISP_GAMMA_12BIT_LUT_T),
-		GFP_KERNEL);
-	if (gamma_lut == NULL) {
-		DDPPR_ERR("%s: no memory\n", __func__);
-		return -EFAULT;
-	}
-
 	if (user_gamma_lut == NULL) {
+		DDPMSG("%s: user_gamma_lut is NULL\n", __func__);
 		ret = -EFAULT;
-		kfree(gamma_lut);
 	} else {
-		memcpy(gamma_lut, user_gamma_lut,
-			sizeof(struct DISP_GAMMA_12BIT_LUT_T));
 		id = index_of_gamma(comp->id);
-
 		if (id >= 0 && id < DISP_GAMMA_TOTAL) {
+			gamma_lut = vmalloc(sizeof(struct DISP_GAMMA_12BIT_LUT_T));
+			if (gamma_lut == NULL) {
+				DDPMSG("%s: err no memory\n", __func__);
+				return -EFAULT;
+			}
+			memcpy(gamma_lut, user_gamma_lut,
+				sizeof(struct DISP_GAMMA_12BIT_LUT_T));
 			mutex_lock(&g_gamma_global_lock);
 
 			old_lut = g_disp_gamma_12bit_lut;
@@ -494,7 +491,7 @@ static int mtk_gamma_12bit_set_lut(struct mtk_ddp_comp *comp,
 			mutex_unlock(&g_gamma_global_lock);
 
 			if (old_lut != NULL)
-				kfree(old_lut);
+				vfree(old_lut);
 
 			//if (comp->mtk_crtc != NULL)
 			//	mtk_crtc_check_trigger(comp->mtk_crtc, false,
