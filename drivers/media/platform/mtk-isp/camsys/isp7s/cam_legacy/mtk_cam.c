@@ -8960,7 +8960,7 @@ struct mtk_cam_ctx *mtk_cam_start_ctx(struct mtk_cam_device *cam,
 			continue;
 
 		if (*target_sd) {
-			dev_info(cam->dev, "duplicated subdevs!!!\n");
+			dev_info(cam->dev, "duplicated subdevs!!! (%s)\n", entity->name);
 			goto fail_stop_pipeline;
 		}
 
@@ -8976,6 +8976,10 @@ struct mtk_cam_ctx *mtk_cam_start_ctx(struct mtk_cam_device *cam,
 fail_stop_pipeline:
 	mutex_unlock(&cam->v4l2_dev.mdev->graph_mutex);
 	media_pipeline_stop(entity);
+	ctx->sensor = NULL;
+	ctx->seninf = NULL;
+	for (i = 0; i < MAX_PIPES_PER_STREAM; i++)
+		ctx->pipe_subdevs[i] = NULL;
 fail_uninit_frame_done_wq:
 	destroy_workqueue(ctx->frame_done_wq);
 fail_uninit_composer_wq:
