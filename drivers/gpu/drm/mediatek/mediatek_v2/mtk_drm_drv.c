@@ -5635,13 +5635,13 @@ int mtk_drm_get_mode_ext_info_ioctl(struct drm_device *dev, void *data,
 		if (!mtk_drm_helper_get_opt(priv->helper_opt,
 			MTK_DRM_OPT_CHECK_TRIGGER_MERGE))
 			merge_trigger_offset = 0;
-		else if (mtk_crtc->panel_params[i]->merge_trig_offset)
+		else if (mtk_crtc->panel_params[i] && mtk_crtc->panel_params[i]->merge_trig_offset)
 			merge_trigger_offset = mtk_crtc->panel_params[i]->merge_trig_offset;
 
 		if (!mtk_drm_helper_get_opt(priv->helper_opt,
 			MTK_DRM_OPT_PREFETCH_TE))
 			prefetch_te_offset = 0;
-		else if (mtk_crtc->panel_params[i]->prefetch_offset)
+		else if (mtk_crtc->panel_params[i] && mtk_crtc->panel_params[i]->prefetch_offset)
 			prefetch_te_offset = mtk_crtc->panel_params[i]->prefetch_offset;
 
 		total_offset[i] = merge_trigger_offset + prefetch_te_offset;
