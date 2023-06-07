@@ -515,6 +515,10 @@ struct mtk_panel_params {
 	/*Msync 3.0*/
 	unsigned int skip_vblank;
 	bool vblank_off;
+
+	/* PRE_XX */
+	unsigned int merge_trig_offset;
+	unsigned int prefetch_offset;
 };
 
 struct mtk_panel_ext {

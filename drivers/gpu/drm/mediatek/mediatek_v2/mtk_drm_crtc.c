@@ -7213,6 +7213,14 @@ void mtk_crtc_start_event_loop(struct drm_crtc *crtc)
 
 	priv = mtk_crtc->base.dev->dev_private;
 
+	if (mtk_crtc->panel_ext && mtk_crtc->panel_ext->params
+		&& mtk_crtc->panel_ext->params->merge_trig_offset != 0)
+		merge_trigger_offset = mtk_crtc->panel_ext->params->merge_trig_offset;
+
+	if (mtk_crtc->panel_ext && mtk_crtc->panel_ext->params
+		&& mtk_crtc->panel_ext->params->prefetch_offset != 0)
+		prefetch_te_offset = mtk_crtc->panel_ext->params->prefetch_offset;
+
 	mtk_crtc->pre_te_cfg.prefetch_te_en = false;
 	mtk_crtc->pre_te_cfg.vidle_apsrc_off_en = false;
 	mtk_crtc->pre_te_cfg.vidle_dsi_pll_off_en = false;
