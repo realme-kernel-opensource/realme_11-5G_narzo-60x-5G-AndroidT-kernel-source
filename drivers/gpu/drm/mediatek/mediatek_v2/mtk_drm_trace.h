@@ -24,9 +24,10 @@ extern bool g_trace_log_lv2;
 	} \
 } while (0)
 
-#define mtk_drm_trace_end() do { \
+#define mtk_drm_trace_end(fmt, args...) do { \
 	if (g_trace_log) { \
-		mtk_drm_print_trace("E\n"); \
+		mtk_drm_print_trace("E|%d|"fmt"\n", \
+		current->tgid, ##args); \
 	} \
 } while (0)
 
