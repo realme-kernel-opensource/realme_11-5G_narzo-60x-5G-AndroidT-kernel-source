@@ -7054,6 +7054,11 @@ void mtk_cam_extisp_vf_reset(struct mtk_raw_pipeline *pipe)
 	struct mtk_camsv_device *camsv_dev = NULL;
 	struct mtk_cam_ctx *ctx = NULL;
 	struct mtk_cam_device *cam = NULL;
+	struct mtk_cam_request *req;
+	struct mtk_cam_request_stream_data *s_data;
+	int sv_seq_no_outer;
+	u64 time_boot = ktime_get_boottime_ns();
+	u64 time_mono = ktime_get_ns();
 	int i;
 
 	for (i = MTKCAM_SUBDEV_RAW_0; i < ARRAY_SIZE(pipe->raw->devs); i++)
@@ -7073,6 +7078,21 @@ void mtk_cam_extisp_vf_reset(struct mtk_raw_pipeline *pipe)
 			mtk_cam_sv_vf_reset(ctx, camsv_dev);
 			camsv_dev->sof_count = 0;
 			camsv_dev->tg_cnt = 0;
+			sv_seq_no_outer =
+				readl_relaxed(camsv_dev->base +
+				REG_CAMSVCENTRAL_FRAME_SEQ_NO);
+			req = mtk_cam_get_req(ctx, sv_seq_no_outer);
+			/* check if needed to clear deque req when ESD */
+			if (req) {
+				s_data = mtk_cam_req_get_s_data(req,
+					ctx->stream_id, 0);
+				dev_info(raw_dev->dev, "[%s] frame done compensation req(%d),ts(%lu)\n",
+						__func__, s_data->frame_seq_no, time_boot);
+				mtk_cam_set_timestamp(s_data,
+						time_boot, time_mono);
+				mtk_camsys_frame_done(ctx,
+					s_data->frame_seq_no, ctx->stream_id);
+			}
 		}
 	}
 }
