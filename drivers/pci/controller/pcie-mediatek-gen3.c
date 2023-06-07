@@ -1330,6 +1330,15 @@ static void pcie_android_rvh_do_serror(void *data, struct pt_regs *regs,
 		return;
 	}
 
+	/* Check the sleep protect ready */
+	val = readl_relaxed(pcie_port->vlpcfg_base + PCIE_VLP_AXI_PROTECT_STA);
+	val &= (PCIE_MAC_SLP_READY_MASK(pcie_port->port_num) |
+	       PCIE_PHY_SLP_READY_MASK(pcie_port->port_num));
+	if (val) {
+		pr_info("PCIe sleep protect is not ready=%#x\n", val);
+		return;
+	}
+
 	/* Debug monitor pcie design internal signal */
 	writel_relaxed(0x80810001, pcie_port->base + PCIE_DEBUG_SEL_0);
 	writel_relaxed(0x22330100, pcie_port->base + PCIE_DEBUG_SEL_1);
@@ -1639,9 +1648,9 @@ static void mtk_pcie_enable_hw_control(struct mtk_pcie_port *port, bool enable)
 
 	writel_relaxed(val, port->pextpcfg + PEXTP_PWRCTL_0);
 
-	if (enable)
-		dev_info(port->dev, "PCIe HW MODE BIT=%#x\n",
-			 readl_relaxed(port->pextpcfg + PEXTP_PWRCTL_0));
+	dev_info(port->dev, "PCIe HW MODE BIT=%#x, pcie_port->ep_hw_mode_en=%d, pcie_port->rc_hw_mode_en=%d, enable=%d\n",
+		 readl_relaxed(port->pextpcfg + PEXTP_PWRCTL_0),
+		 port->ep_hw_mode_en, port->rc_hw_mode_en, enable);
 }
 
 /*
