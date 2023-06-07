@@ -1373,6 +1373,8 @@ int mtk_drm_setbacklight(struct drm_crtc *crtc, unsigned int level,
 				comp->funcs->io_cmd(comp, cmdq_handle, DSI_STOP_VDO_MODE, NULL);
 				comp->funcs->io_cmd(comp, cmdq_handle, DSI_SET_BL, &level);
 				comp->funcs->io_cmd(comp, cmdq_handle, DSI_START_VDO_MODE, NULL);
+				mtk_disp_mutex_trigger(mtk_crtc->mutex[0], cmdq_handle);
+				comp->funcs->io_cmd(comp, cmdq_handle, COMP_REG_START, NULL);
 			} else
 				comp->funcs->io_cmd(comp, cmdq_handle, DSI_SET_BL, &level);
 		}
