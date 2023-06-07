@@ -5519,6 +5519,9 @@ int bdg_common_init(enum DISP_BDG_ENUM module,
 	if (!dsi->ext->params->is_cphy)
 		startup_seq_dphy_specific(ap_tx_data_rate);
 
+	//enable 6382 clkbuf output when receive CLK_REQ signal
+	mtk_spi_write(0x000000a0, 0x00000012);
+
 	output_debug_signal();
 	//BDG_OUTREG32(cmdq, TX_REG[0]->DSI_RESYNC_CON, 0x0);
 	//bdg_common_init_for_rx_pat(module, dsi, cmdq);
