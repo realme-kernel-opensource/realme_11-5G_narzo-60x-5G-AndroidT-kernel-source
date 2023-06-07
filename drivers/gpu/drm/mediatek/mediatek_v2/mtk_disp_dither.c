@@ -158,6 +158,7 @@ static int mtk_disp_dither_set_interrupt(struct mtk_ddp_comp *comp, int enabled)
 	return ret;
 }
 
+/*
 static bool disp_dither_purecolor_devide(struct mtk_ddp_comp *comp)
 {
 	unsigned int clr_red, clr_green, clr_blue, i;
@@ -186,6 +187,7 @@ static bool disp_dither_purecolor_devide(struct mtk_ddp_comp *comp)
 	}
 	return ret;
 }
+*/
 
 static void disp_dither_purecolor_detection(struct mtk_ddp_comp *comp)
 {
@@ -206,10 +208,7 @@ static void disp_dither_purecolor_detection(struct mtk_ddp_comp *comp)
 		clr_flag = (readl(comp->regs + DISP_DITHER_PURECOLOR0) >> 4) & 0x1;
 		DDPINFO("%s: clr_flag: 0x%x", __func__, clr_flag);
 		if (clr_flag) {
-			if (disp_dither_purecolor_devide(comp))
-				disp_dither_set_bypass(crtc, 1);
-			else
-				disp_dither_set_bypass(crtc, 0);
+			disp_dither_set_bypass(crtc, 1);
 		} else {
 			disp_dither_set_bypass(crtc, 0);
 		}
@@ -561,7 +560,7 @@ static void mtk_dither_bypass(struct mtk_ddp_comp *comp, int bypass,
 			      struct cmdq_pkt *handle)
 {
 	struct mtk_disp_dither *priv = dev_get_drvdata(comp->dev);
-	DDPINFO("%s\n", __func__);
+	DDPINFO("%s bypass[%d]\n", __func__, bypass);
 	g_dither_relay_value[index_of_dither(comp->id)] = bypass;
 
 	if (bypass)
@@ -1202,7 +1201,7 @@ void disp_dither_set_bypass(struct drm_crtc *crtc, int bypass)
 	ret = mtk_crtc_user_cmd(crtc, default_comp, BYPASS_DITHER, &bypass);
 	mtk_crtc_check_trigger(default_comp->mtk_crtc, true, true);
 
-	DDPINFO("%s : ret = %d", __func__, ret);
+	DDPINFO("%s : ret = %d bypass = %d", __func__, ret, bypass);
 }
 
 void disp_dither_set_color_detect(struct drm_crtc *crtc, int enable)
