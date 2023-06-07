@@ -6880,6 +6880,25 @@ void mtk_camsys_extisp_raw_frame_start(struct mtk_raw_device *raw_dev,
 			      &ctx->processing_buffer_list.list);
 		ctx->processing_buffer_list.cnt++;
 		spin_unlock(&ctx->processing_buffer_list.lock);
+		/* req_stream_data of req_cq*/
+		req_stream_data = mtk_cam_ctrl_state_to_req_s_data(current_state);
+		while (req_stream_data->frame_seq_no > buf_entry->s_data->frame_seq_no) {
+			dev_info(ctx->cam->dev, "%s: skip apply CQ-%d(<%d)\n",
+			__func__, buf_entry->s_data->frame_seq_no, req_stream_data->frame_seq_no);
+			/* apply next composed buffer */
+			spin_lock(&ctx->composed_buffer_list.lock);
+			buf_entry = list_first_entry(&ctx->composed_buffer_list.list,
+					     struct mtk_cam_working_buf_entry,
+					     list_entry);
+			list_del(&buf_entry->list_entry);
+			ctx->composed_buffer_list.cnt--;
+			spin_unlock(&ctx->composed_buffer_list.lock);
+			spin_lock(&ctx->processing_buffer_list.lock);
+			list_add_tail(&buf_entry->list_entry,
+				      &ctx->processing_buffer_list.list);
+			ctx->processing_buffer_list.cnt++;
+			spin_unlock(&ctx->processing_buffer_list.lock);
+		}
 		base_addr = buf_entry->buffer.iova;
 		apply_cq(raw_dev, 0, base_addr,
 			buf_entry->cq_desc_size,
@@ -6889,9 +6908,6 @@ void mtk_camsys_extisp_raw_frame_start(struct mtk_raw_device *raw_dev,
 		/* Transit state from svinner -> CQ */
 		state_transition(current_state,
 			E_STATE_EXTISP_SV_OUTER, E_STATE_EXTISP_CQ);
-
-		/* req_stream_data of req_cq*/
-		req_stream_data = mtk_cam_ctrl_state_to_req_s_data(current_state);
 		dev_info(raw_dev->dev,
 		"SOF[ctx:%d-#%d], CQ-%d updated (buf:%d) composed:%d, cq_addr:0x%x, cnt:%d %d/%d, key:%d\n",
 		ctx->stream_id, dequeued_frame_seq_no, req_stream_data->frame_seq_no,
