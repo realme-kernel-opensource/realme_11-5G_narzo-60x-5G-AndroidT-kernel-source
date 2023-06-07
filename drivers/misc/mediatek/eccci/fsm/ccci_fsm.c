@@ -1392,8 +1392,8 @@ success:
 	fsm_broadcast_state(ctl, GATED);
 	fsm_finish_command(ctl, cmd, 1);
 	if (atomic_read(&md_dapc_ke_occurred) && atomic_read(&en_flight_timeout)) {
-		CCCI_ERROR_LOG(0, FSM, "md_dapc_ke_occurred and en_flight_timeout, bug_on\n");
-		BUG_ON(1);
+		CCCI_ERROR_LOG(0, FSM, "md_dapc_ke_occurred and en_flight_timeout, no bug_on\n");
+		//BUG_ON(1);
 	}
 }
 
