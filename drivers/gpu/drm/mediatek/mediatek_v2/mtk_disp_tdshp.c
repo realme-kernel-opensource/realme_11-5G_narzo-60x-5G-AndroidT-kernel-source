@@ -16,6 +16,9 @@ static DEFINE_SPINLOCK(g_tdshp_clock_lock);
 // It's a work around for no comp assigned in functions.
 static struct mtk_ddp_comp *default_comp;
 static struct mtk_ddp_comp *tdshp1_default_comp;
+#ifdef OPLUS_FEATURE_DISPLAY
+extern bool g_tdshp_probe_ready;
+#endif
 
 #define index_of_tdshp(module) ((module == DDP_COMPONENT_TDSHP0) ? 0 : \
 			((module == DDP_COMPONENT_TDSHP1) ? 1 : \
@@ -101,9 +104,9 @@ static int mtk_disp_tdshp_write_reg(struct mtk_ddp_comp *comp,
 		goto thshp_write_reg_unlock;
 	}
 
-	DDPINFO("tdshp_en: %x, tdshp_limit: %x, tdshp_ylev_256: %x\n",
+	DDPINFO("tdshp_en: %x, tdshp_limit: %x, tdshp_ylev_256: %x g_disp_clarity_support[%d]\n",
 			disp_tdshp_regs->tdshp_en, disp_tdshp_regs->tdshp_limit,
-			disp_tdshp_regs->tdshp_ylev_256);
+			disp_tdshp_regs->tdshp_ylev_256, g_disp_clarity_support);
 
 	cmdq_pkt_write(handle, comp->cmdq_base,
 		comp->regs_pa + DISP_TDSHP_CFG, 0x2 | g_tdshp_relay_value[id], 0x11);
@@ -114,7 +117,7 @@ static int mtk_disp_tdshp_write_reg(struct mtk_ddp_comp *comp,
 					disp_tdshp_regs->tdshp_ink_sel << 24 |
 					disp_tdshp_regs->tdshp_bypass_high << 29 |
 					disp_tdshp_regs->tdshp_bypass_mid << 30 |
-					disp_tdshp_regs->tdshp_en << 31), ~0);
+					disp_tdshp_regs->tdshp_en << 31), 0xFF0000FF);
 	else
 		cmdq_pkt_write(handle, comp->cmdq_base, comp->regs_pa + DISP_TDSHP_00,
 			(disp_tdshp_regs->tdshp_softcoring_gain << 0 |
@@ -420,22 +423,28 @@ int mtk_drm_ioctl_tdshp_get_size(struct drm_device *dev, void *data,
 		struct drm_file *file_priv)
 {
 	struct drm_crtc *crtc;
+	struct mtk_drm_private *priv;
 	u32 width = 0, height = 0;
 	struct DISP_TDSHP_DISPLAY_SIZE *dst =
 			(struct DISP_TDSHP_DISPLAY_SIZE *)data;
-	struct mtk_drm_private *private = dev->dev_private;
 
 	pr_notice("%s", __func__);
 
 	crtc = list_first_entry(&(dev)->mode_config.crtc_list,
 		typeof(*crtc), head);
 
-	if (IS_ERR_OR_NULL(private)) {
-		DDPMSG("%s, invalid private\n", __func__);
-		return -EINVAL;
+	if (IS_ERR_OR_NULL(crtc)) {
+	        DDPPR_ERR("find crtc fail\n");
+	        return -EINVAL;
 	}
 
-	mutex_lock(&private->commit.lock);
+	priv = dev->dev_private;
+	if (IS_ERR_OR_NULL(priv)) {
+	        DDPPR_ERR("%s, invalid priv\n", __func__);
+	        return -EINVAL;
+	}
+
+	mutex_lock(&priv->commit.lock);
 	mtk_drm_crtc_get_panel_original_size(crtc, &width, &height);
 	if (width == 0 || height == 0) {
 		DDPFUNC("panel original size error(%dx%d).\n", width, height);
@@ -447,7 +456,7 @@ int mtk_drm_ioctl_tdshp_get_size(struct drm_device *dev, void *data,
 	g_tdshp_size.lcm_height = height;
 
 	disp_tdshp_wait_size(60);
-	mutex_unlock(&private->commit.lock);
+	mutex_unlock(&priv->commit.lock);
 
 	pr_notice("%s ---", __func__);
 	memcpy(dst, &g_tdshp_size, sizeof(g_tdshp_size));
@@ -870,13 +879,19 @@ static int mtk_disp_tdshp_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	if (!default_comp && comp_id == DDP_COMPONENT_TDSHP0)
-		default_comp = &priv->ddp_comp;
-	if (!tdshp1_default_comp && comp_id == DDP_COMPONENT_TDSHP1)
-		tdshp1_default_comp = &priv->ddp_comp;
-
 	priv->data = of_device_get_match_data(dev);
 	platform_set_drvdata(pdev, priv);
+
+	//if single pipe num is 2, use 0 or 2 for disp, others is for litepq
+	if (!default_comp && comp_id == DDP_COMPONENT_TDSHP0)
+		default_comp = &priv->ddp_comp;
+	if (priv->data->single_pipe_tdshp_num == 1) {
+		if (!tdshp1_default_comp && comp_id == DDP_COMPONENT_TDSHP1)
+			tdshp1_default_comp = &priv->ddp_comp;
+	} else if (priv->data->single_pipe_tdshp_num == 2) {
+		if (!tdshp1_default_comp && comp_id == DDP_COMPONENT_TDSHP2)
+			tdshp1_default_comp = &priv->ddp_comp;
+	}
 
 	mtk_ddp_comp_pm_enable(&priv->ddp_comp);
 
@@ -885,6 +900,9 @@ static int mtk_disp_tdshp_probe(struct platform_device *pdev)
 		dev_err(dev, "Failed to add component: %d\n", ret);
 		mtk_ddp_comp_pm_disable(&priv->ddp_comp);
 	}
+#ifdef OPLUS_FEATURE_DISPLAY
+	g_tdshp_probe_ready = true;
+#endif
 	pr_notice("%s-\n", __func__);
 
 	return ret;

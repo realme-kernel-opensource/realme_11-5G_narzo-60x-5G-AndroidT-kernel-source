@@ -1245,7 +1245,6 @@ void ufs_mtk_mcq_set_irq_affinity(struct ufs_hba *hba)
 		dev_info(hba->dev, "Set irq %d to CPU: %d\n", irq, _cpu);
 	}
 }
-
 void ufs_mtk_mcq_disable_irq(struct ufs_hba *hba)
 {
 	struct ufs_hba_private *hba_priv = (struct ufs_hba_private *)hba->android_vendor_data1;
@@ -1287,7 +1286,6 @@ void ufs_mtk_mcq_enable_irq(struct ufs_hba *hba)
 		enable_irq(irq);
 	}
 }
-
 int ufs_mtk_mcq_memory_alloc(struct ufs_hba *hba)
 {
 	size_t usel_size, ucel_size;

@@ -443,6 +443,7 @@ static void mtk_vdec_check_vcp_active(struct mtk_vcodec_ctx *ctx, bool from_time
 {
 #if IS_ENABLED(CONFIG_MTK_TINYSYS_VCP_SUPPORT)
 #ifdef VDEC_CHECK_ALIVE
+	bool need_reg = false;
 	if (mtk_vcodec_vcp & (1 << MTK_INST_DECODER)) {
 		if (!from_timer)
 			mutex_lock(&ctx->vcp_active_mutex);
@@ -453,13 +454,16 @@ static void mtk_vdec_check_vcp_active(struct mtk_vcodec_ctx *ctx, bool from_time
 				ctx->id, debug_str, ctx->vcp_action_cnt,
 				ctx->last_vcp_action_cnt, add_cnt);
 			ctx->is_vcp_active = true;
-			vcp_register_feature(VDEC_FEATURE_ID);
-			mtk_mmdvfs_enable_vcp(true, VCP_PWR_USR_VDEC);
+			need_reg = true;
 		}
 		if (add_cnt)
 			ctx->vcp_action_cnt++;
 		if (!from_timer)
 			mutex_unlock(&ctx->vcp_active_mutex);
+		if (need_reg){
+			vcp_register_feature(VDEC_FEATURE_ID);
+			mtk_mmdvfs_enable_vcp(true, VCP_PWR_USR_VDEC);
+		}
 	}
 #endif
 #endif
@@ -1259,6 +1263,12 @@ void mtk_vdec_queue_error_event(struct mtk_vcodec_ctx *ctx)
 	v4l2_event_queue_fh(&ctx->fh, &ev_error);
 }
 
+static void mtk_vdec_dvfs_reset_AO_flag(struct mtk_vcodec_dev *dev)
+{
+	dev->vdec_dvfs_params.target_freq = 0;
+	dev->vdec_dvfs_params.high_loading_scenario = 0;
+}
+
 void mtk_vdec_error_handle(struct mtk_vcodec_ctx *ctx, char *debug_str)
 {
 	struct mtk_vcodec_dev *dev = ctx->dev;
@@ -1277,10 +1287,10 @@ void mtk_vdec_error_handle(struct mtk_vcodec_ctx *ctx, char *debug_str)
 	for (i = 0; i < MTK_VDEC_HW_NUM; i++)
 		atomic_set(&dev->dec_hw_active[i], 0);
 	mutex_lock(&dev->dec_dvfs_mutex);
-	if (mtk_vdec_dvfs_is_pw_always_on(ctx)) {
-		mtk_vcodec_dec_pw_off(&dev->pm);
-		dev->vdec_dvfs_params.target_freq = 0;
-		dev->vdec_dvfs_params.high_loading_scenario = 0;
+	if (mtk_vdec_dvfs_is_pw_always_on(dev)) {
+		if (!dev->dvfs_is_suspend_off)
+			mtk_vcodec_dec_pw_off(&dev->pm);
+		mtk_vdec_dvfs_reset_AO_flag(dev);
 	}
 	mutex_unlock(&dev->dec_dvfs_mutex);
 	mtk_vdec_queue_error_event(ctx);
@@ -1566,8 +1576,7 @@ not_put_fb:
 			mutex_lock(&ctx->dev->ctx_mutex);
 		list_for_each_safe(p, q, &ctx->dev->ctx_list) {
 			tmp_ctx = list_entry(p, struct mtk_vcodec_ctx, list);
-			if (tmp_ctx != NULL &&
-			    tmp_ctx->state < MTK_STATE_ABORT && tmp_ctx->state > MTK_STATE_FREE)
+			if (tmp_ctx != NULL && tmp_ctx->state == MTK_STATE_HEADER)
 				v4l2_m2m_try_schedule(tmp_ctx->m2m_ctx);
 		}
 		if (!mtk_vcodec_is_vcp(MTK_INST_DECODER))
@@ -1806,6 +1815,7 @@ static void mtk_vdec_worker(struct work_struct *work)
 			 */
 			mtk_v4l2_err(" <=== [%d] vcodec not support the source!===>",
 				ctx->id);
+			ctx->state = MTK_STATE_ABORT;
 			mtk_vdec_queue_error_event(ctx);
 			v4l2_m2m_buf_done(&src_buf_info->vb,
 				VB2_BUF_STATE_DONE);
@@ -2098,33 +2108,6 @@ void mtk_vdec_check_alive_work(struct work_struct *ws)
 	caws = container_of(ws, struct vdec_check_alive_work_struct, work);
 	dev = caws->dev;
 
-	/* vcp background idle check */
-	mutex_lock(&dev->ctx_mutex);
-	if (list_empty(&dev->ctx_list) || dev->is_codec_suspending == 1) {
-		mutex_unlock(&dev->ctx_mutex);
-		if (caws->ctx != NULL)
-			kfree(caws);
-		return;
-	}
-
-	list_for_each(item, &dev->ctx_list) {
-		ctx = list_entry(item, struct mtk_vcodec_ctx, list);
-		mutex_lock(&ctx->vcp_active_mutex);
-		mtk_v4l2_debug(8, "ctx:%d, is_vcp_active:%d, vcp_action_cnt:%d, last_vcp_action_cnt:%d",
-			ctx->id, ctx->is_vcp_active, ctx->vcp_action_cnt,
-			ctx->last_vcp_action_cnt);
-		if (ctx->state == MTK_STATE_HEADER) {
-			if (ctx->last_vcp_action_cnt == ctx->vcp_action_cnt)
-				mtk_vdec_check_vcp_inactive(ctx, true);
-			else {
-				mtk_vdec_check_vcp_active(ctx, true, false, "timer");
-				ctx->last_vcp_action_cnt = ctx->vcp_action_cnt;
-			}
-		} else if (ctx->state == MTK_STATE_ABORT)
-			mtk_v4l2_err("ctx:%d is abort", ctx->id);
-		mutex_unlock(&ctx->vcp_active_mutex);
-	}
-	mutex_unlock(&dev->ctx_mutex);
 
 #if IS_ENABLED(CONFIG_MTK_TINYSYS_VCP_SUPPORT)
 	/* vcp background idle check may turn off vcp power */
@@ -2145,7 +2128,7 @@ void mtk_vdec_check_alive_work(struct work_struct *ws)
 		if (caws->ctx != NULL)
 			kfree(caws);
 		mutex_unlock(&dev->dec_dvfs_mutex);
-		return;
+		goto vcp_backgroud_idle_check;
 	}
 
 	if (caws->ctx != NULL) { // ctx retrigger case
@@ -2159,7 +2142,7 @@ void mtk_vdec_check_alive_work(struct work_struct *ws)
 		if (!need_update) {
 			kfree(caws);
 			mutex_unlock(&dev->dec_dvfs_mutex);
-			return;
+			goto vcp_backgroud_idle_check;
 		}
 		ctx->is_active = 1;
 		mtk_vdec_dvfs_update_active_state(ctx);
@@ -2198,13 +2181,20 @@ void mtk_vdec_check_alive_work(struct work_struct *ws)
 	if (need_update) {
 		if (mmdvfs_in_vcp) {
 			vcp_dvfs_data[0] = MTK_INST_SET;
-			if (!mtk_vdec_dvfs_is_pw_always_on(ctx))
-				mtk_vcodec_dec_pw_on(&ctx->dev->pm);
-			if (vdec_if_set_param(ctx, SET_PARAM_MMDVFS, vcp_dvfs_data) != 0) // any ctx
-				mtk_v4l2_err("[VDVFS][%d] alive ipi timeout", __func__, ctx->id);
+			if (!mtk_vdec_dvfs_is_pw_always_on(dev))
+				mtk_vcodec_dec_pw_on(&dev->pm);
+			if (vdec_if_set_param(ctx, SET_PARAM_MMDVFS, vcp_dvfs_data) != 0) {
+				mtk_v4l2_err("[VDVFS][%d] alive ipi fail", ctx->id);
+				ctx->state = MTK_STATE_ABORT;
+				mtk_vdec_dvfs_reset_AO_flag(dev);
+			} // any ctx
 			mtk_vdec_dvfs_sync_vsi_data(ctx);
-			if (!mtk_vdec_dvfs_is_pw_always_on(ctx))
-				mtk_vcodec_dec_pw_off(&ctx->dev->pm);
+			mtk_v4l2_debug(0, "[VDVFS] check alive: freq: %d, h_l: %d, op: %d",
+				ctx->dev->vdec_dvfs_params.target_freq,
+				ctx->dev->vdec_dvfs_params.high_loading_scenario,
+				ctx->dec_params.operating_rate);
+			if (!mtk_vdec_dvfs_is_pw_always_on(dev))
+				mtk_vcodec_dec_pw_off(&dev->pm);
 		} else {
 			mtk_vdec_force_update_freq(dev);
 		}
@@ -2212,6 +2202,33 @@ void mtk_vdec_check_alive_work(struct work_struct *ws)
 	}
 
 	mutex_unlock(&dev->dec_dvfs_mutex);
+
+vcp_backgroud_idle_check:
+	/* vcp background idle check */
+	mutex_lock(&dev->ctx_mutex);
+	if (list_empty(&dev->ctx_list) || dev->is_codec_suspending == 1) {
+		mutex_unlock(&dev->ctx_mutex);
+		return;
+	}
+
+	list_for_each(item, &dev->ctx_list) {
+		ctx = list_entry(item, struct mtk_vcodec_ctx, list);
+		mutex_lock(&ctx->vcp_active_mutex);
+		mtk_v4l2_debug(8, "ctx:%d, is_vcp_active:%d, vcp_action_cnt:%d, last_vcp_action_cnt:%d",
+			ctx->id, ctx->is_vcp_active, ctx->vcp_action_cnt,
+			ctx->last_vcp_action_cnt);
+		if (ctx->state == MTK_STATE_HEADER) {
+			if (ctx->last_vcp_action_cnt == ctx->vcp_action_cnt)
+				mtk_vdec_check_vcp_inactive(ctx, true);
+			else {
+				mtk_vdec_check_vcp_active(ctx, true, false, "timer");
+				ctx->last_vcp_action_cnt = ctx->vcp_action_cnt;
+			}
+		} else if (ctx->state == MTK_STATE_ABORT)
+			mtk_v4l2_err("ctx:%d is abort", ctx->id);
+		mutex_unlock(&ctx->vcp_active_mutex);
+	}
+	mutex_unlock(&dev->ctx_mutex);
 }
 
 void mtk_vcodec_dec_set_default_params(struct mtk_vcodec_ctx *ctx)
@@ -3405,7 +3422,12 @@ static void vb2ops_vdec_buf_queue(struct vb2_buffer *vb)
 		if (ret) {
 			mtk_v4l2_err("[%d]: vdec_if_init() fail ret=%d",
 						 ctx->id, ret);
-			mtk_vdec_error_handle(ctx, "init");
+			if (ret == -EIO)
+				mtk_vdec_error_handle(ctx, "init");
+			else {
+				ctx->state = MTK_STATE_ABORT;
+				mtk_vdec_queue_error_event(ctx);
+			}
 			return;
 		}
 		ctx->state = MTK_STATE_INIT;
@@ -3624,7 +3646,8 @@ static void vb2ops_vdec_buf_queue(struct vb2_buffer *vb)
 		} else if (mtk_vcodec_unsupport || last_frame_type != NON_EOS) {
 			mtk_v4l2_err("[%d]Error!! Codec driver not support the file!",
 						 ctx->id);
-			mtk_vdec_error_handle(ctx, "unsupport");
+			ctx->state = MTK_STATE_ABORT;
+			mtk_vdec_queue_error_event(ctx);
 		} else if (ret == -EIO) {
 			/* ipi timeout / VPUD crashed ctx abort */
 			mtk_vdec_error_handle(ctx, "dec init");
@@ -3876,16 +3899,20 @@ static int vb2ops_vdec_start_streaming(struct vb2_queue *q, unsigned int count)
 
 		mutex_lock(&ctx->dev->dec_dvfs_mutex);
 		if (ctx->dev->vdec_reg == 0 && ctx->dev->vdec_mmdvfs_clk == 0) {
-			if (!mtk_vdec_dvfs_is_pw_always_on(ctx))
+			if (!mtk_vdec_dvfs_is_pw_always_on(ctx->dev))
 				mtk_vcodec_dec_pw_on(&ctx->dev->pm);
 			mtk_vdec_prepare_vcp_dvfs_data(ctx, vcp_dvfs_data);
-			vdec_if_set_param(ctx, SET_PARAM_MMDVFS, vcp_dvfs_data);
+			if (vdec_if_set_param(ctx, SET_PARAM_MMDVFS, vcp_dvfs_data) != 0) {
+				mtk_v4l2_err("[VDVFS][%d] streamOn ipi fail", ctx->id);
+				ctx->state = MTK_STATE_ABORT;
+				mtk_vdec_dvfs_reset_AO_flag(ctx->dev);
+			}
 			mtk_vdec_dvfs_sync_vsi_data(ctx);
 			mtk_v4l2_debug(0, "[VDVFS][%d(%d)] start DVFS(UP): freq:%d, h_l:%d, op:%d",
 				ctx->id, ctx->state, ctx->dev->vdec_dvfs_params.target_freq,
 				ctx->dev->vdec_dvfs_params.high_loading_scenario,
 				ctx->dec_params.operating_rate);
-			if (!mtk_vdec_dvfs_is_pw_always_on(ctx))
+			if (!mtk_vdec_dvfs_is_pw_always_on(ctx->dev))
 				mtk_vcodec_dec_pw_off(&ctx->dev->pm);
 		} else {
 			mtk_v4l2_debug(0, "[%d][VDVFS][VDEC] start ctrl DVFS in AP", ctx->id);
@@ -4035,16 +4062,20 @@ static void vb2ops_vdec_stop_streaming(struct vb2_queue *q)
 	mutex_lock(&ctx->dev->dec_dvfs_mutex);
 	ctx->is_active = 0;
 	if (ctx->dev->vdec_reg == 0 && ctx->dev->vdec_mmdvfs_clk == 0) {
-		if (!mtk_vdec_dvfs_is_pw_always_on(ctx))
+		if (!mtk_vdec_dvfs_is_pw_always_on(ctx->dev))
 			mtk_vcodec_dec_pw_on(&ctx->dev->pm);
 		mtk_vdec_unprepare_vcp_dvfs_data(ctx, vcp_dvfs_data);
-		vdec_if_set_param(ctx, SET_PARAM_MMDVFS, vcp_dvfs_data);
+		if (vdec_if_set_param(ctx, SET_PARAM_MMDVFS, vcp_dvfs_data) != 0) {
+			mtk_v4l2_err("[VDVFS][%d] streamOff ipi fail", ctx->id);
+			ctx->state = MTK_STATE_ABORT;
+			mtk_vdec_dvfs_reset_AO_flag(ctx->dev);
+		}
 		mtk_vdec_dvfs_sync_vsi_data(ctx);
 		mtk_v4l2_debug(0, "[VDVFS][%d(%d)] stop DVFS (UP): freq: %d, h_l: %d, op: %d",
 			ctx->id, ctx->state, ctx->dev->vdec_dvfs_params.target_freq,
 			ctx->dev->vdec_dvfs_params.high_loading_scenario,
 			ctx->dec_params.operating_rate);
-		if (!mtk_vdec_dvfs_is_pw_always_on(ctx))
+		if (!mtk_vdec_dvfs_is_pw_always_on(ctx->dev))
 			mtk_vcodec_dec_pw_off(&ctx->dev->pm);
 	} else {
 		mtk_v4l2_debug(0, "[%d][VDVFS][VDEC] stop ctrl DVFS in AP", ctx->id);

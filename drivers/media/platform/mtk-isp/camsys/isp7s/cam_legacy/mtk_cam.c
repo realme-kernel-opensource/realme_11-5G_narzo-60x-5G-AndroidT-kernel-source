@@ -49,6 +49,9 @@
 #include <linux/soc/mediatek/mtk-cmdq-ext.h>
 #include <slbc/slbc_ops.h>
 
+#ifndef OPLUS_FEATURE_CAMERA_COMMON
+#define OPLUS_FEATURE_CAMERA_COMMON
+#endif /* OPLUS_FEATURE_CAMERA_COMMON */
 
 #ifdef CAMSYS_TF_DUMP_7S
 #include <dt-bindings/memory/mt6985-larb-port.h>
@@ -3762,6 +3765,11 @@ EXIT:
 #if PURE_RAW_WITH_SV
 	if (mtk_cam_ctx_support_pure_raw_with_sv(ctx) &&
 	    frame_param->raw_param.imgo_path_sel == MTKCAM_IPI_IMGO_UNPROCESSED &&
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	    !mtk_cam_scen_is_m2m(&scen) &&
+#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
+	    !mtk_cam_scen_is_mstream(&scen) &&
+	    !mtk_cam_scen_is_mstream_m2m(&scen) &&
 	    !mtk_cam_scen_is_mstream_types(&scen) &&
 	    !mtk_cam_scen_is_subsample(&scen) &&
 	    !mtk_cam_scen_is_m2m(&scen) &&
@@ -6464,7 +6472,6 @@ static int isp_composer_handle_ack(struct mtk_cam_device *cam,
 			raw_dev->last_sof_time_ns = ktime_get_boottime_ns();
 			raw_dev->sof_count =  1;
 		}
-
 		return 0;
 	}
 	spin_lock(&ctx->composed_buffer_list.lock);
@@ -7442,7 +7449,6 @@ void mtk_cam_dev_req_enqueue(struct mtk_cam_device *cam,
 			if (mtk_cam_ctx_has_raw(ctx) && initial_frame &&
 			    mtk_cam_scen_is_m2m(scen))
 				mtk_ctx_m2m_watchdog_start(ctx, 4);
-
 			dev_dbg(cam->dev, "%s:ctx:%d:req:%d(%s) enqueue ctx_used:0x%x,streaming_ctx:0x%x,job cnt:%d, running(%d)\n",
 				__func__, stream_id, req_stream_data->frame_seq_no,
 				req->req.debug_str, req->ctx_used, cam->streaming_ctx,
@@ -7875,6 +7881,8 @@ int mtk_cam_s_data_dev_config(struct mtk_cam_request_stream_data *s_data,
 		dev_info(dev, "%s: get sv_dev failed\n", __func__);
 		return -EINVAL;
 	}
+
+	#ifndef OPLUS_FEATURE_CAMERA_COMMON
 	if (req->ctx_link_update & 1 << ctx->stream_id) {
 		arr_tag = s_raw_pipe_data->tag_info;
 		used_tag_cnt = 0;
@@ -7885,6 +7893,21 @@ int mtk_cam_s_data_dev_config(struct mtk_cam_request_stream_data *s_data,
 		used_tag_cnt = 0;
 		enabled_sv_tags = 0;
 	}
+	*used_tag_cnt = 0;
+	*enabled_sv_tags = 0;
+	mtk_cam_sv_reset_tag_info(arr_tag);
+	#else /*OPLUS_FEATURE_CAMERA_COMMON*/
+	if (req->ctx_link_update & 1 << ctx->stream_id) {
+		arr_tag = s_raw_pipe_data->tag_info;
+		used_tag_cnt = 0;
+		enabled_sv_tags = 0;
+		mtk_cam_sv_reset_tag_info(arr_tag);
+	} else {
+		arr_tag = ctx->sv_dev->tag_info;
+		used_tag_cnt = 0;
+		enabled_sv_tags = 0;
+	}
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 
 	if (config_pipe && mtk_cam_scen_is_sensor_stagger(scen)) {
 		int hw_scen, exp_no, req_amount, idle_tags;
@@ -7925,9 +7948,15 @@ int mtk_cam_s_data_dev_config(struct mtk_cam_request_stream_data *s_data,
 			return -EINVAL;
 		}
 
+		#ifndef OPLUS_FEATURE_CAMERA_COMMON
 		idle_tags = mtk_cam_get_sv_idle_tags(ctx,
 			enabled_sv_tags,
 			hw_scen, exp_no, req_amount, true, is_rgbw);
+		#else /*OPLUS_FEATURE_CAMERA_COMMON*/
+		idle_tags = mtk_cam_get_sv_idle_tags(ctx,
+			enabled_sv_tags,
+			hw_scen, exp_no, req_amount, true, is_rgbw);
+		#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 		if (idle_tags == 0) {
 #if PURE_RAW_WITH_SV_VHDR
 			ctx->pure_raw_sv_tag_idx = -1;
@@ -7951,9 +7980,16 @@ int mtk_cam_s_data_dev_config(struct mtk_cam_request_stream_data *s_data,
 		req_amount = 1;
 		is_rgbw = mtk_cam_scen_is_rgbw_enabled(scen);
 
+
+		#ifndef OPLUS_FEATURE_CAMERA_COMMON
 		idle_tags = mtk_cam_get_sv_idle_tags(ctx,
 			enabled_sv_tags,
 			hw_scen, exp_no, req_amount, true, is_rgbw);
+		#else /*OPLUS_FEATURE_CAMERA_COMMON*/
+		idle_tags = mtk_cam_get_sv_idle_tags(ctx,
+			enabled_sv_tags,
+			hw_scen, exp_no, req_amount, true, is_rgbw);
+		#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 		if (idle_tags == 0) {
 			dev_info(cam->dev, "no available sv tags(scen:%d/req_amount:%d)",
 				hw_scen, req_amount);
@@ -7976,9 +8012,16 @@ int mtk_cam_s_data_dev_config(struct mtk_cam_request_stream_data *s_data,
 		hw_scen = (1 << HWPATH_ID(MTKCAM_IPI_HW_PATH_ON_THE_FLY));
 		exp_no = 1;
 		req_amount = 1;
+
+		#ifndef OPLUS_FEATURE_CAMERA_COMMON
 		idle_tags = mtk_cam_get_sv_idle_tags(ctx,
 			enabled_sv_tags,
 			hw_scen, exp_no, req_amount, true, false);
+		#else /*OPLUS_FEATURE_CAMERA_COMMON*/
+		idle_tags = mtk_cam_get_sv_idle_tags(ctx,
+			enabled_sv_tags,
+			hw_scen, exp_no, req_amount, true, false);
+		#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 		if (idle_tags == 0) {
 			dev_info(cam->dev, "no available sv tags(scen:%d/req_amount:%d)",
 				hw_scen, req_amount);
@@ -8045,6 +8088,16 @@ int mtk_cam_s_data_dev_config(struct mtk_cam_request_stream_data *s_data,
 		ctx->sv_dev->used_tag_cnt = used_tag_cnt;
 		ctx->sv_dev->enabled_tags = enabled_sv_tags;
 	}
+
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	if (req->ctx_link_update & 1 << ctx->stream_id) {
+		s_raw_pipe_data->used_tag_cnt = used_tag_cnt;
+		s_raw_pipe_data->enabled_sv_tags = enabled_sv_tags;
+	} else {
+		ctx->sv_dev->used_tag_cnt = used_tag_cnt;
+		ctx->sv_dev->enabled_tags = enabled_sv_tags;
+	}
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 
 	/* camsv's config param update */
 	for (i = SVTAG_START; i < SVTAG_END; i++) {
@@ -8521,6 +8574,9 @@ int mtk_cam_dev_config(struct mtk_cam_ctx *ctx, bool streaming, bool config_pipe
 	} else if (config_pipe && !mtk_cam_scen_is_mstream(scen_active) &&
 		!mtk_cam_scen_is_m2m(scen_active) &&
 		!mtk_cam_scen_is_subsample(scen_active) &&
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+		!mtk_cam_scen_is_m2m(scen_active) &&
+#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 		!mtk_cam_is_hsf(ctx)) {
 #if PURE_RAW_WITH_SV
 		unsigned int hw_scen, exp_no, req_amount;
@@ -10563,9 +10619,12 @@ void mtk_ctx_watchdog_stop(struct mtk_cam_ctx *ctx, int pipe_id, int ctx_streamo
 		__func__, ctx->stream_id, pipe_id);
 
 	/* Prevent from ctx stopping in the middle of last watchdog worker */
-	/* should be modified to flush or atomic later (wrong completion) */
+#ifndef OPLUS_FEATURE_CAMERA_COMMON
 	if (ctx_streamoff && wait_for_completion_timeout(&watchdog_data->watchdog_complete,
-					msecs_to_jiffies(2)) == 0)
+					msecs_to_jiffies(10)) == 0)
+#else /*OPLUS_FEATURE_CAMERA_COMMON*/
+	if (ctx_streamoff == 0)
+#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 		dev_info(ctx->cam->dev,
 			"%s:ctx/pipe_id(%d/%d): complete timeout\n",
 			__func__, ctx->stream_id, pipe_id);

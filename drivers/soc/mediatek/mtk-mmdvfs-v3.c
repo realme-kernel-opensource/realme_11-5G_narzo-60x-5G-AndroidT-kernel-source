@@ -30,6 +30,10 @@
 
 #include "../../misc/mediatek/smi/mtk-smi-dbg.h"
 
+#ifndef OPLUS_FEATURE_CAMERA_COMMON
+#define OPLUS_FEATURE_CAMERA_COMMON
+#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
+
 static u8 mmdvfs_clk_num;
 static struct mtk_mmdvfs_clk *mtk_mmdvfs_clks;
 

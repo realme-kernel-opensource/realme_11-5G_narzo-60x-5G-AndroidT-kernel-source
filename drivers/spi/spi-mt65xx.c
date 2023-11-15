@@ -19,8 +19,10 @@
 #include <linux/spi/spi.h>
 #include <linux/dma-mapping.h>
 #include <linux/pm_qos.h>
+//#ifdef OPLUS_FEATURE_DISPLAY
 #include <linux/time.h>
 #include <linux/timekeeping.h>
+//#endif /* OPLUS_FEATURE_DISPLAY */
 
 #define SPI_CFG0_REG                      0x0000
 #define SPI_CFG1_REG                      0x0004
@@ -155,7 +157,9 @@ struct mtk_spi {
 	 */
 	u32 auto_suspend_delay;
 	bool suspend_delay_update;
+//#ifdef OPLUS_FEATURE_DISPLAY
 	u32 is_fifo_polling;
+//#endif /* OPLUS_FEATURE_DISPLAY */
 };
 
 static const struct mtk_spi_compatible mtk_common_compat;
@@ -779,13 +783,16 @@ static void mtk_spi_setup_dma_addr(struct spi_master *master,
 	}
 }
 
-
 static int mtk_spi_fifo_transfer(struct spi_master *master,
 				 struct spi_device *spi,
 				 struct spi_transfer *xfer)
 {
+//#ifdef OPLUS_FEATURE_DISPLAY
+	/*int cnt, remainder;
+	u32 reg_val;*/
 	u32 reg_val, cnt, remainder, len, irq_status;
 	u64 cur_time;
+//#endif /* OPLUS_FEATURE_DISPLAY */
 	struct mtk_spi *mdata = spi_master_get_devdata(master);
 
 	mdata->cur_transfer = xfer;
@@ -805,31 +812,30 @@ static int mtk_spi_fifo_transfer(struct spi_master *master,
 		}
 	}
 
+	spi_debug("spi setting Done.Dump reg before Transfer start:\n");
+	spi_dump_reg(mdata, master);
+//#ifdef OPLUS_FEATURE_DISPLAY
 	if (!mdata->is_fifo_polling) {
-		/* make sure all reg setting done before transfer */
-		mb();
-		spi_debug("spi setting Done.Dump reg before Transfer start:\n");
-		spi_dump_reg(mdata, master);
 		mtk_spi_enable_transfer(master);
 		return 1;
 	}
-	//disable irq
+
 	reg_val = readl(mdata->base + SPI_CMD_REG);
 	reg_val &= ~(SPI_CMD_FINISH_IE | SPI_CMD_PAUSE_IE);
 	writel(reg_val, mdata->base + SPI_CMD_REG);
-	/* make sure all reg setting done before transfer */
-	mb();
-	spi_debug("spi setting Done.Dump reg before Transfer start(polling):\n");
-	spi_dump_reg(mdata, master);
+
 	mtk_spi_enable_transfer(master);
+
+	/*return 1;*/
 	cur_time = ktime_get_ns();
 	while (1) {
-		do {
-			irq_status = readl(mdata->base + SPI_STATUS1_REG);
-			/*reference to core layer timeout (ns) */
-			if (ktime_get_ns() - cur_time > MTK_SPI_TRANSFER_TIMEOUT)
-				return -ETIMEDOUT;
 
+		do {
+			irq_status = readl(mdata->base+SPI_STATUS1_REG);
+			/*Reference to core layer timeout (ns) */
+			if (ktime_get_ns() - cur_time > 200000000) {
+				return -ETIMEDOUT;
+			}
 			cpu_relax();
 		} while (!irq_status);
 
@@ -875,13 +881,11 @@ static int mtk_spi_fifo_transfer(struct spi_master *master,
 				writel(reg_val, mdata->base + SPI_TX_DATA_REG);
 			}
 		}
-		/* make sure all reg setting done before transfer */
-		mb();
-		spi_debug("spi setting Done.Dump reg before Transfer start:(polling)\n");
-		spi_dump_reg(mdata, master);
+
 		mtk_spi_enable_transfer(master);
 	}
 	return 0;
+//#endif /* OPLUS_FEATURE_DISPLAY */
 }
 
 static int mtk_spi_dma_transfer(struct spi_master *master,
@@ -933,6 +937,12 @@ static int mtk_spi_dma_transfer(struct spi_master *master,
 	mb();
 	spi_debug("spi setting Done.Dump reg before Transfer start:\n");
 	spi_dump_reg(mdata, master);
+	if (mdata->is_fifo_polling) {
+		//enable irq
+		cmd |= SPI_CMD_FINISH_IE | SPI_CMD_PAUSE_IE;
+		writel(cmd, mdata->base + SPI_CMD_REG);
+	}
+
 	mtk_spi_enable_transfer(master);
 
 	return 1;
@@ -1272,6 +1282,7 @@ static int mtk_spi_probe(struct platform_device *pdev)
 	ret = of_property_read_u32_index(
 				pdev->dev.of_node, "mediatek,fifo-polling",
 				0, &mdata->is_fifo_polling);
+		printk("--------print spi fifo_polling:%d\n",ret);
 
 	if (ret < 0)
 		mdata->is_fifo_polling = 0;

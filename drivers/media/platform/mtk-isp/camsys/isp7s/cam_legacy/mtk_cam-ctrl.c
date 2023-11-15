@@ -52,6 +52,11 @@ module_param(debug_cam_ctrl, int, 0644);
 #define SENSOR_DELAY_GUARD_TIME_60FPS 16
 #define SENSOR_SET_STAGGER_DEADLINE_MS  20
 #define SENSOR_SET_STAGGER_RESERVED_MS  7
+
+#ifndef OPLUS_FEATURE_CAMERA_COMMON
+#define OPLUS_FEATURE_CAMERA_COMMON
+#endif /* OPLUS_FEATURE_CAMERA_COMMON */
+
 #define SENSOR_SET_EXTISP_DEADLINE_MS  18
 #define SENSOR_SET_EXTISP_RESERVED_MS  7
 
@@ -2068,6 +2073,7 @@ mtk_cam_read_hdr_timestamp(struct mtk_cam_ctx *ctx,
 		return;
 	}
 
+#ifndef OPLUS_FEATURE_CAMERA_COMMON
 	if (mtk_cam_ctx_has_raw(ctx) &&
 		(mtk_cam_scen_is_hdr(stream_data->feature.scen) &&
 		 !mtk_cam_scen_is_m2m(stream_data->feature.scen))) {
@@ -2080,6 +2086,20 @@ mtk_cam_read_hdr_timestamp(struct mtk_cam_ctx *ctx,
 		mtk_cam_push_hdr_tsfifo(
 			ctx->pipe, &stream_data->hdr_timestamp_cache);
 	}
+#else /*OPLUS_FEATURE_CAMERA_COMMON*/
+	if (mtk_cam_ctx_has_raw(ctx) &&
+		(mtk_cam_scen_is_hdr(stream_data->feature.scen) &&
+		 !mtk_cam_scen_is_m2m(stream_data->feature.scen))) {
+		dev_info(ctx->cam->dev,
+			"[hdr timestamp to subdev pipe] req:%d le/ne/se:%lld/%lld/%lld\n",
+			stream_data->frame_seq_no,
+			stream_data->hdr_timestamp_cache.le,
+			stream_data->hdr_timestamp_cache.ne,
+			stream_data->hdr_timestamp_cache.se);
+		mtk_cam_push_hdr_tsfifo(
+			ctx->pipe, &stream_data->hdr_timestamp_cache);
+	}
+#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 }
 
 int mtk_camsys_raw_subspl_state_handle(struct mtk_raw_device *raw_dev,
@@ -3749,9 +3769,15 @@ int mtk_cam_hdr_last_frame_start(struct mtk_raw_device *raw_dev,
 	return 0;
 }
 
+#ifndef OPLUS_FEATURE_CAMERA_COMMON
 static void mtk_cam_seamless_switch_work(struct work_struct *work)
+#else /*OPLUS_FEATURE_CAMERA_COMMON*/
+static void mtk_cam_seamless_switch_work(struct kthread_work *work)
+#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 {
+#ifndef OPLUS_FEATURE_CAMERA_COMMON
 	struct mtk_cam_req_work *req_work = (struct mtk_cam_req_work *)work;
+#endif
 	struct mtk_cam_request *req;
 	struct mtk_cam_request_stream_data *s_data;
 	struct mtk_cam_ctx *ctx;
@@ -3761,10 +3787,18 @@ static void mtk_cam_seamless_switch_work(struct work_struct *work)
 	unsigned int time_after_sof = 0;
 	int ret = 0;
 
+#ifndef OPLUS_FEATURE_CAMERA_COMMON
 	s_data = mtk_cam_req_work_get_s_data(req_work);
+#else /*OPLUS_FEATURE_CAMERA_COMMON*/
+	s_data = mtk_cam_sensor_work_to_s_data(work);
+#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 	if (!s_data) {
 		pr_info("%s mtk_cam_req_work(%p), req_stream_data(%p), dropped\n",
+#ifndef OPLUS_FEATURE_CAMERA_COMMON
 			__func__, req_work, s_data);
+#else /*OPLUS_FEATURE_CAMERA_COMMON*/
+			__func__, work, s_data);
+#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 		return;
 	}
 	req = mtk_cam_s_data_get_req(s_data);
@@ -3855,15 +3889,23 @@ static void mtk_cam_seamless_switch_work(struct work_struct *work)
 static bool mtk_cam_handle_seamless_switch(struct mtk_cam_request_stream_data *s_data)
 {
 	struct mtk_cam_ctx *ctx = mtk_cam_s_data_get_ctx(s_data);
+#ifndef OPLUS_FEATURE_CAMERA_COMMON
 	struct mtk_cam_device *cam = ctx->cam;
+#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 	bool ret = false;
 
 	if (s_data->flags & MTK_CAM_REQ_S_DATA_FLAG_SENSOR_MODE_UPDATE_T1) {
 		ret = mtk_cam_hw_mode_is_dc(ctx->pipe->hw_mode) ? true : false;
 		state_transition(&s_data->state, E_STATE_OUTER, E_STATE_CAMMUX_OUTER_CFG);
+#ifndef OPLUS_FEATURE_CAMERA_COMMON
 		INIT_WORK(&s_data->seninf_s_fmt_work.work, mtk_cam_seamless_switch_work);
 		atomic_set(&s_data->seninf_s_fmt_work.is_queued, 1);
 		queue_work(cam->link_change_wq, &s_data->seninf_s_fmt_work.work);
+#else /*OPLUS_FEATURE_CAMERA_COMMON*/
+		mtk_cam_submit_kwork(ctx->sensor_ctrl.sensorsetting_wq,
+			    &s_data->sensor_work,
+			    mtk_cam_seamless_switch_work);
+#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 	}
 
 	return ret;
@@ -5738,6 +5780,11 @@ int mtk_camsv_special_hw_scenario_handler(struct mtk_cam_device *cam,
 
 				s_data = mtk_cam_get_req_s_data(ctx, ctx->stream_id,
 					ctx->component_dequeued_frame_seq_no);
+
+				#ifdef OPLUS_FEATURE_CAMERA_COMMON
+				req = mtk_cam_s_data_get_req(s_data);
+				#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
+
 				if (!s_data) {
 					dev_info(ctx->cam->dev, "ctx(%d): extisp:s_data(%d) is NULL\n",
 					ctx->stream_id, ctx->component_dequeued_frame_seq_no);
@@ -6497,6 +6544,12 @@ void mtk_cam_extisp_sv_frame_start(struct mtk_cam_ctx *ctx,
 				sensor_ctrl->extisp_sv_key > 0) {
 				dev_info(ctx->cam->dev, "[%s] repeated key: inner:%d, tg_cnt:%d\n",
 					__func__, sensor_ctrl->extisp_sv_key, irq_info->tg_cnt);
+			#ifdef OPLUS_FEATURE_CAMERA_COMMON
+			} else if (sensor_ctrl->extisp_sv_key == irq_info->tg_cnt &&
+						sensor_ctrl->extisp_sv_key > 0) {
+				dev_info(ctx->cam->dev, "[%s] repeated key: inner:%d, tg_cnt:%d\n",
+					__func__, sensor_ctrl->extisp_sv_key, irq_info->tg_cnt);
+			#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 			} else {
 				state_sensor = state_temp;
 			}
@@ -6996,6 +7049,7 @@ static void mtk_cam_extisp_vf_reset_correct(struct mtk_cam_ctx *ctx,
 	fbc_cnt = ((fbc_fho_ctl & CNT_BIT_MASK) >> 16) - 1;
 
 	raw_dev->vf_reset_cnt = fbc_cnt >= 0 ? fbc_cnt : 0;
+
 	dev_info(raw_dev->dev, "[%s] vf_reset_cnt:%d, fho_fbc_ctrl2:0x%x",
 		__func__, raw_dev->vf_reset_cnt, fbc_fho_ctl);
 }

@@ -165,13 +165,11 @@ static void wb_queue_work(struct bdi_writeback *wb,
 		atomic_inc(&work->done->cnt);
 
 	spin_lock_irq(&wb->work_lock);
-
 	if (test_bit(WB_registered, &wb->state)) {
 		list_add_tail(&work->list, &wb->work_list);
 		mod_delayed_work(bdi_wq, &wb->dwork, 0);
 	} else
 		finish_writeback_work(wb, work);
-
 	spin_unlock_irq(&wb->work_lock);
 }
 

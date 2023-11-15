@@ -2600,6 +2600,10 @@ static void mtk_battery_daemon_handler(struct mtk_battery *gm, void *nl_data,
 	static int ptim_vbat, ptim_i;
 	int int_value;
 	static int badcmd;
+#ifdef OPLUS_FEATURE_CHG_BASIC
+	struct power_supply *chg_psy = NULL;
+	union power_supply_propval prop;
+#endif
 
 	if (gm == NULL)
 		gm = get_mtk_battery();
@@ -2769,11 +2773,26 @@ static void mtk_battery_daemon_handler(struct mtk_battery *gm, void *nl_data,
 	{
 		/* todo */
 		int is_charger_exist = 0;
-
+#ifndef OPLUS_FEATURE_CHG_BASIC
 		if (gm->bs_data.bat_status == POWER_SUPPLY_STATUS_CHARGING)
 			is_charger_exist = true;
 		else
 			is_charger_exist = false;
+#else
+		chg_psy = devm_power_supply_get_by_phandle(&gm->gauge->pdev->dev, "charger");
+		if (IS_ERR_OR_NULL(chg_psy)) {
+			bm_err("%s Couldn't get chg_psy\n", __func__);
+			is_charger_exist = false;
+		} else {
+			power_supply_get_property(chg_psy, POWER_SUPPLY_PROP_ONLINE, &prop);
+			bm_err("%s get chg_psy\n", __func__);
+			if (prop.intval) {
+				is_charger_exist = true;
+			} else {
+				is_charger_exist = false;
+			}
+		}
+#endif /*OPLUS_FEATURE_CHG_BASIC*/
 
 		ret_msg->fgd_data_len += sizeof(is_charger_exist);
 		memcpy(ret_msg->fgd_data,
@@ -3097,11 +3116,27 @@ static void mtk_battery_daemon_handler(struct mtk_battery *gm, void *nl_data,
 		/* charger status need charger API */
 		/* CHR_ERR = -1 */
 		/* CHR_NORMAL = 0 */
+#ifndef OPLUS_FEATURE_CHG_BASIC
 		if (gm->bs_data.bat_status ==
 			POWER_SUPPLY_STATUS_NOT_CHARGING)
 			charger_status = -1;
 		else
 			charger_status = 0;
+#else
+		chg_psy = devm_power_supply_get_by_phandle(&gm->gauge->pdev->dev, "charger");
+		if (IS_ERR_OR_NULL(chg_psy)) {
+			bm_err("%s Couldn't get chg_psy\n", __func__);
+			charger_status = -1;
+		} else {
+			power_supply_get_property(chg_psy, POWER_SUPPLY_PROP_ONLINE, &prop);
+			bm_err("%s get chg_psy\n", __func__);
+			if (prop.intval) {
+				charger_status = 0;
+			} else {
+				charger_status = -1;
+			}
+		}
+#endif /*OPLUS_FEATURE_CHG_BASIC*/
 
 		ret_msg->fgd_data_len += sizeof(charger_status);
 		memcpy(ret_msg->fgd_data,
@@ -4106,6 +4141,10 @@ static void mtk_battery_daemon_handler(struct mtk_battery *gm, void *nl_data,
 		prcv = (struct fgd_cmd_param_t_4 *)rcv;
 		memcpy(&param, prcv->input, sizeof(struct fgd_cmd_param_t_8));
 
+#ifdef OPLUS_FEATURE_CHG_BASIC
+		gm->prev_batt_fcc = param.data[4];
+		gm->prev_batt_remaining_capacity = param.data[4] /10 * param.data[6] / 10000;
+#endif /* OPLUS_FEATURE_CHG_BASIC */
 		bm_err("[fr] FG_DAEMON_CMD_SET_BATTERY_CAPACITY = %d %d %d %d %d %d %d %d %d %d RM:%d\n",
 				param.data[0],
 				param.data[1],

@@ -459,10 +459,27 @@ static int mtk_pcie_startup_port(struct mtk_pcie_port *port)
 		val |= PCIE_P2_EXIT_BY_CLKREQ | PCIE_P2_IDLE_TIME(8);
 		writel_relaxed(val, port->base + PCIE_ASPM_CTRL);
 
+		/* Check the sleep protect ready */
+		err = readl_poll_timeout(port->vlpcfg_base +
+					 PCIE_VLP_AXI_PROTECT_STA, val,
+					 !(val & PCIE_PHY0_SLP_READY_MASK),
+					 20, 50 * USEC_PER_MSEC);
+		if (err) {
+			dev_info(port->dev, "PCIe sleep protect not ready, %#x\n",
+				 readl_relaxed(port->vlpcfg_base +
+				 PCIE_VLP_AXI_PROTECT_STA));
+			return err;
+		}
+
 		mtk_pcie_mt6985_fixup();
 
 		/* Software enable BBCK2 */
 		clk_buf_voter_ctrl_by_id(7, SW_FPM);
+
+		/* Enable Bypass BBCK2 */
+		val = readl_relaxed(port->pextpcfg + PEXTP_RSV_0);
+		val |= PCIE_BBCK2_BYPASS;
+		writel_relaxed(val, port->pextpcfg + PEXTP_RSV_0);
 	}
 
 	/* Mask all INTx interrupts */
@@ -1308,7 +1325,6 @@ int mtk_pcie_remove_port(int port)
 }
 EXPORT_SYMBOL(mtk_pcie_remove_port);
 
-#if IS_ENABLED(CONFIG_ANDROID_FIX_PCIE_SLAVE_ERROR)
 static void pcie_android_rvh_do_serror(void *data, struct pt_regs *regs,
 				       unsigned int esr, int *ret)
 {
@@ -1350,6 +1366,11 @@ static void pcie_android_rvh_do_serror(void *data, struct pt_regs *regs,
 	pr_info("debug recovery:%#x\n",
 		readl_relaxed(pcie_port->base + PCIE_DEBUG_MONITOR));
 
+	writel_relaxed(0x48494a4b, pcie_port->base + PCIE_DEBUG_SEL_0);
+	writel_relaxed(0xcccc0100, pcie_port->base + PCIE_DEBUG_SEL_1);
+	pr_info("debug part=c, bus=0x48494a4b, monitor=%#x\n",
+		readl_relaxed(pcie_port->base + PCIE_DEBUG_MONITOR));
+
 	pr_info("ltssm reg: %#x, PCIe interrupt status=%#x, AXI0 ERROR address=%#x, AXI0 ERROR status=%#x\n",
 		readl_relaxed(pcie_port->base + PCIE_LTSSM_STATUS_REG),
 		readl_relaxed(pcie_port->base + PCIE_INT_STATUS_REG),
@@ -1359,8 +1380,9 @@ static void pcie_android_rvh_do_serror(void *data, struct pt_regs *regs,
 	val = readl_relaxed(pcie_port->base + PCIE_INT_STATUS_REG);
 	if (val & PCIE_AXI_READ_ERR)
 		*ret = 1;
+
+	dump_stack();
 }
-#endif
 
 /**
  * mtk_pcie_dump_link_info() - Dump PCIe RC information
@@ -1377,6 +1399,7 @@ u32 mtk_pcie_dump_link_info(int port)
 	struct platform_device *pdev;
 	struct mtk_pcie_port *pcie_port;
 	u32 val, ret_val = 0;
+	void __iomem *pcie_phy_sif;
 
 	pcie_node = mtk_pcie_find_node_by_port(port);
 	if (!pcie_node) {
@@ -1403,6 +1426,19 @@ u32 mtk_pcie_dump_link_info(int port)
 		pr_info("PCIe sleep protect is not ready=%#x\n", val);
 		return 0;
 	}
+
+	/* Debug monitor pcie design internal signal */
+	writel_relaxed(0x48494a4b, pcie_port->base + PCIE_DEBUG_SEL_0);
+	writel_relaxed(0xcccc0100, pcie_port->base + PCIE_DEBUG_SEL_1);
+	pr_info("debug part=c, bus=0x48494a4b, monitor=%#x\n",
+		readl_relaxed(pcie_port->base + PCIE_DEBUG_MONITOR));
+
+	/* Debug PHY TPLL */
+	pcie_phy_sif = ioremap(PCIE_PHY_SIF, 0x100);
+	writel_relaxed(0x0, pcie_phy_sif);
+	writel_relaxed(0x3c, pcie_phy_sif + 0x4);
+	pr_info("PHY TPLL=%#x\n", readl_relaxed(pcie_phy_sif + 0xD0));
+	iounmap(pcie_phy_sif);
 
 	pr_info("ltssm reg:%#x, link sta:%#x, power sta:%#x, IP basic sta:%#x, int sta:%#x, axi err add:%#x, axi err info:%#x\n",
 		readl_relaxed(pcie_port->base + PCIE_LTSSM_STATUS_REG),
@@ -1861,14 +1897,12 @@ static struct platform_driver mtk_pcie_driver = {
 
 static int mtk_pcie_init_func(void *pvdev)
 {
-#if IS_ENABLED(CONFIG_ANDROID_FIX_PCIE_SLAVE_ERROR)
 	int err = 0;
 
 	err = register_trace_android_rvh_do_serror(
 			pcie_android_rvh_do_serror, NULL);
 	if (err)
 		pr_info("register pcie android_rvh_do_serror failed!\n");
-#endif
 
 	return platform_driver_register(&mtk_pcie_driver);
 }

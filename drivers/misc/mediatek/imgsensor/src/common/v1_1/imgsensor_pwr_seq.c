@@ -11,6 +11,107 @@
 
 /* Legacy design */
 struct IMGSENSOR_HW_POWER_SEQ sensor_power_sequence[] = {
+#if defined(S5KHM6S_MIPI_RAW_CHONGQING)
+    {
+        SENSOR_DRVNAME_S5KHM6S_MIPI_RAW_CHONGQING,
+        {
+            {RST, Vol_Low, 1},
+            {DOVDD, Vol_1800, 1},
+            {AVDD1_GPIO, Vol_High, 2},
+            {AVDD, Vol_2200, 1},
+            {DVDD, Vol_1000, 5},
+            {AFVDD, Vol_2800, 3},
+            {RST, Vol_High, 2},
+            {SensorMCLK, Vol_High, 11}
+        },
+    },
+#endif
+#if defined(S5KJN1_MIPI_RAW_CHONGQING)
+    {
+        SENSOR_DRVNAME_S5KJN1_MIPI_RAW_CHONGQING,
+        {
+            {RST, Vol_Low, 1},
+            {DOVDD, Vol_1800, 1},
+            {AVDD1_GPIO, Vol_High, 2},
+            {DVDD, Vol_1050, 1},
+            {AVDD, Vol_2800, 5},
+            {AFVDD, Vol_2800, 3},
+            {RST, Vol_High, 2},
+            {SensorMCLK, Vol_High, 10},
+        },
+    },
+#endif
+#if defined(OV64B_MIPI_RAW_CHONGQING)
+    {
+        SENSOR_DRVNAME_OV64B_MIPI_RAW_CHONGQING,
+        {
+            {RST, Vol_Low, 1},
+            {SensorMCLK, Vol_High, 1},
+            {AVDD, Vol_2800, 2},
+            {DOVDD, Vol_1800, 1},
+            {AVDD1_GPIO, Vol_High, 2},
+            {AFVDD, Vol_2800, 2},
+            {DVDD, Vol_1100, 5},
+            {RST, Vol_High, 6},
+        },
+    },
+#endif
+#if defined(HI1336_MIPI_RAW_CHONGQING)
+    {
+        SENSOR_DRVNAME_HI1336_MIPI_RAW_CHONGQING,
+        {
+             {RST, Vol_Low, 1},
+             {AVDD1_GPIO, Vol_High, 2},
+             {DOVDD, Vol_1800, 1},
+             {AVDD, Vol_2800, 1},
+             {DVDD, Vol_1100, 1},
+             {AFVDD, Vol_2800, 3},
+             {SensorMCLK, Vol_High,1},
+             {RST, Vol_High, 7},
+        },
+    },
+#endif
+#if defined(S5K3P9SP_MIPI_RAW_CHONGQING)
+    {
+        SENSOR_DRVNAME_S5K3P9SP_MIPI_RAW_CHONGQING,
+        {
+            {RST, Vol_Low, 1},
+            {DVDD, Vol_1050, 1},
+            {DOVDD, Vol_1800, 1},
+            {AVDD1_GPIO, Vol_High, 2},
+            {AVDD, Vol_2800, 1},
+            {RST, Vol_High, 3},
+            {SensorMCLK, Vol_High, 3},
+        },
+    },
+#endif
+#if defined(OV08D10_MIPI_RAW_CHONGQING)
+    {
+        SENSOR_DRVNAME_OV08D10_MIPI_RAW_CHONGQING,
+        {
+            {RST, Vol_Low, 3},
+            {DOVDD, Vol_1800, 1},
+            {AVDD1_GPIO, Vol_High, 2},
+            {AVDD, Vol_2800, 1},
+            {DVDD, Vol_1200, 5},
+            {RST, Vol_High, 3},
+            {SensorMCLK, Vol_High, 10},
+        },
+    },
+#endif
+#if defined(OV02B1B_MIPI_MONO_CHONGQING)
+    {
+        SENSOR_DRVNAME_OV02B1B_MIPI_MONO_CHONGQING,
+        {
+            {RST, Vol_Low, 1},
+            {DOVDD, Vol_1800, 1},
+            {AVDD1_GPIO, Vol_High, 2},
+            {AVDD, Vol_2800, 6},
+            {SensorMCLK, Vol_High, 5},
+            {RST, Vol_High, 10}
+        },
+    },
+#endif
 #if defined(IMX766_MIPI_RAW)
 	{
 		SENSOR_DRVNAME_IMX766_MIPI_RAW,

@@ -27,6 +27,8 @@
 #include "mtk_disp_ccorr.h"
 #include "mtk_disp_gamma.h"
 #include "mtk_disp_oddmr/mtk_disp_oddmr.h"
+#include "mtk_drm_trace.h"
+
 #include "platform/mtk_drm_platform.h"
 #include "mtk_drm_trace.h"
 
@@ -35,6 +37,18 @@
 #endif
 #if IS_ENABLED(CONFIG_MTK_TINYSYS_VCP_SUPPORT)
 #include "vcp_status.h"
+#endif
+
+#ifdef OPLUS_FEATURE_DISPLAY
+#include <soc/oplus/system/oplus_mm_kevent_fb.h>
+#endif
+
+#ifdef OPLUS_FEATURE_DISPLAY_ADFR
+#include "mtk_drm_trace.h"
+#include "oplus_adfr.h"
+extern unsigned long long last_rdma_start_time;
+extern int g_commit_pid;
+extern int oplus_adfr_cancel_fakeframe(void);
 #endif
 
 #define DISPSYS0	0
@@ -12277,6 +12291,7 @@ void mtk_ddp_add_comp_to_path(struct mtk_drm_crtc *mtk_crtc,
 	const struct mtk_mmsys_reg_data *reg_data = mtk_crtc->mmsys_reg_data;
 	enum mtk_ddp_comp_id cur = comp->id;
 	void __iomem *config_regs = mtk_crtc->config_regs;
+	resource_size_t config_regs_pa = mtk_crtc->config_regs_pa;
 	struct mtk_drm_private *priv = mtk_crtc->base.dev->dev_private;
 
 	switch (priv->data->mmsys_id) {
@@ -12350,12 +12365,14 @@ void mtk_ddp_add_comp_to_path(struct mtk_drm_crtc *mtk_crtc,
 		reg1 = 0;
 		/* decide which dispsys need to config */
 		if (mtk_crtc->dispsys_num > 1 && reg_data->dispsys_map &&
-				reg_data->dispsys_map[cur] == 1)
+				reg_data->dispsys_map[cur] == 1) {
 			config_regs = mtk_crtc->side_config_regs;
-
+			config_regs_pa = mtk_crtc->side_config_regs_pa;
+		}
 		if (reg_data->dispsys_map && (reg_data->dispsys_map[cur] == OVLSYS0 ||
 			reg_data->dispsys_map[next] == OVLSYS0)) {
 			config_regs = mtk_crtc->ovlsys0_regs;
+			config_regs_pa = mtk_crtc->ovlsys0_regs_pa;
 			addr = MT6985_OVLSYS_BYPASS_MUX_SHADOW;
 			reg = 0x1;
 			reg1 = 0xFF0000;
@@ -12363,6 +12380,7 @@ void mtk_ddp_add_comp_to_path(struct mtk_drm_crtc *mtk_crtc,
 				(reg_data->dispsys_map[cur] == OVLSYS1 ||
 			reg_data->dispsys_map[next] == OVLSYS1)) {
 			config_regs = mtk_crtc->ovlsys1_regs;
+			config_regs_pa = mtk_crtc->ovlsys1_regs_pa;
 			addr = MT6985_OVLSYS_BYPASS_MUX_SHADOW;
 			reg = 0x1;
 			reg1 = 0xFF0000;
@@ -12379,10 +12397,20 @@ void mtk_ddp_add_comp_to_path(struct mtk_drm_crtc *mtk_crtc,
 
 		value = mtk_ddp_ovl_con_MT6985(cur, next, &addr);
 		if (value >= 0) {
-			reg = readl_relaxed(config_regs + addr) |
-					(unsigned int)value;
-			writel_relaxed(reg, config_regs + addr);
+			struct cmdq_pkt *cmdq_handle =
+				cmdq_pkt_create(mtk_crtc->gce_obj.client[CLIENT_CFG]);
+			if (IS_ERR_OR_NULL(cmdq_handle)) {
+				DDPPR_ERR("%s create handle fail, %lu\n",
+						__func__, (unsigned long)cmdq_handle);
+				break;
+			}
+
+			cmdq_pkt_write(cmdq_handle, mtk_crtc->gce_obj.base,
+				config_regs_pa + addr, value, value);
+			cmdq_pkt_flush(cmdq_handle);
+			cmdq_pkt_destroy(cmdq_handle);
 		}
+
 		value = mtk_ddp_mout_en_MT6985(reg_data, cur, next, &addr);
 		if (value >= 0) {
 			reg = readl_relaxed(config_regs + addr) |
@@ -12603,6 +12631,7 @@ void mtk_ddp_add_comp_to_path_with_cmdq(struct mtk_drm_crtc *mtk_crtc,
 	struct mtk_drm_private *priv = mtk_crtc->base.dev->dev_private;
 	resource_size_t config_regs_pa = mtk_crtc->config_regs_pa;
 	struct mtk_ddp_comp *comp;
+	unsigned tmp = 2;
 
 	switch (priv->data->mmsys_id) {
 	case MMSYS_MT2701:
@@ -12699,6 +12728,7 @@ void mtk_ddp_add_comp_to_path_with_cmdq(struct mtk_drm_crtc *mtk_crtc,
 				addr = MT6985_OVLSYS_BYPASS_MUX_SHADOW;
 				reg = 0x1;
 				reg1 = 0xFF0000;
+				tmp = 0;
 			} else if (mtk_crtc->ovlsys_num > 1 && reg_data->dispsys_map &&
 				(reg_data->dispsys_map[cur] == OVLSYS1 ||
 				reg_data->dispsys_map[next] == OVLSYS1)) {
@@ -12706,6 +12736,7 @@ void mtk_ddp_add_comp_to_path_with_cmdq(struct mtk_drm_crtc *mtk_crtc,
 				addr = MT6985_OVLSYS_BYPASS_MUX_SHADOW;
 				reg = 0x1;
 				reg1 = 0xFF0000;
+				tmp = 1;
 			}
 		}
 
@@ -12720,6 +12751,8 @@ void mtk_ddp_add_comp_to_path_with_cmdq(struct mtk_drm_crtc *mtk_crtc,
 			cmdq_pkt_write(handle, mtk_crtc->gce_obj.base,
 				config_regs_pa
 				+ addr, value, value);
+		DDPPR_ERR("OVL_CONN case1 crtc %u v %d ovlsys %d\n",
+			drm_crtc_index(&mtk_crtc->base), value, tmp);
 
 		value = mtk_ddp_mout_en_MT6985(reg_data,
 			cur, next, &addr);
@@ -12990,6 +13023,7 @@ void mtk_ddp_remove_comp_from_path(struct mtk_drm_crtc *mtk_crtc,
 	unsigned int addr, reg;
 	int value;
 	void __iomem *config_regs = NULL;
+	resource_size_t config_regs_pa;
 	const struct mtk_mmsys_reg_data *reg_data  = NULL;
 	struct mtk_drm_private *priv = NULL;
 
@@ -12998,6 +13032,7 @@ void mtk_ddp_remove_comp_from_path(struct mtk_drm_crtc *mtk_crtc,
 		return;
 	}
 	config_regs = mtk_crtc->config_regs;
+	config_regs_pa = mtk_crtc->config_regs_pa;
 	reg_data  = mtk_crtc->mmsys_reg_data;
 	priv = mtk_crtc->base.dev->dev_private;
 
@@ -13038,24 +13073,40 @@ void mtk_ddp_remove_comp_from_path(struct mtk_drm_crtc *mtk_crtc,
 		}
 		/* decide which dispsys need to config */
 		if (mtk_crtc->dispsys_num > 1 &&
-				reg_data->dispsys_map[cur] == 1)
+				reg_data->dispsys_map[cur] == 1) {
 			config_regs = mtk_crtc->side_config_regs;
+			config_regs_pa = mtk_crtc->side_config_regs_pa;
+		}
 
 		if (reg_data->dispsys_map &&
 			(reg_data->dispsys_map[cur] == OVLSYS0 ||
 			reg_data->dispsys_map[next] == OVLSYS0)) {
 			config_regs = mtk_crtc->ovlsys0_regs;
+			config_regs_pa = mtk_crtc->ovlsys0_regs_pa;
 		} else if (mtk_crtc->ovlsys_num > 1 &&
 				(reg_data->dispsys_map[cur] == OVLSYS1 ||
 			reg_data->dispsys_map[next] == OVLSYS1)) {
 			config_regs = mtk_crtc->ovlsys1_regs;
+			config_regs_pa = mtk_crtc->ovlsys1_regs_pa;
 		}
 
 		value = mtk_ddp_ovl_con_MT6985(cur, next, &addr);
 		if (value >= 0) {
-			reg = readl_relaxed(config_regs + addr) & ~(unsigned int)value;
-			writel_relaxed(reg, config_regs + addr);
+			struct cmdq_pkt *cmdq_handle =
+				cmdq_pkt_create(mtk_crtc->gce_obj.client[CLIENT_CFG]);
+			if (IS_ERR_OR_NULL(cmdq_handle)) {
+				DDPPR_ERR("%s create handle fail, %lu\n",
+						__func__, (unsigned long)cmdq_handle);
+				break;
+			}
+
+			cmdq_pkt_write(cmdq_handle, mtk_crtc->gce_obj.base,
+					   config_regs_pa + addr,
+					   ~(unsigned int)value, value);
+			cmdq_pkt_flush(cmdq_handle);
+			cmdq_pkt_destroy(cmdq_handle);
 		}
+
 		value = mtk_ddp_mout_en_MT6985(reg_data, cur, next, &addr);
 		if (value >= 0) {
 			reg = readl_relaxed(config_regs + addr) & ~(unsigned int)value;
@@ -15746,6 +15797,10 @@ void mtk_disp_mutex_submit_sof(struct mtk_disp_mutex *mutex)
 		}
 	}
 }
+
+#ifdef OPLUS_FEATURE_DISPLAY_APOLLO
+int mutex_sof_ns = 0;
+#endif /* OPLUS_FEATURE_DISPLAY_APOLLO */
 static irqreturn_t mtk_disp_mutex_irq_handler(int irq, void *dev_id)
 {
 	struct mtk_ddp *ddp = dev_id;
@@ -15783,6 +15838,8 @@ static irqreturn_t mtk_disp_mutex_irq_handler(int irq, void *dev_id)
 		if (val & (0x1 << (m_id + DISP_MUTEX_TOTAL))) {
 			DDPIRQ("[IRQ] mutex%d eof!\n", m_id);
 			DRM_MMP_MARK(mutex[m_id], val, 1);
+			if (m_id == 0)
+				drm_trace_tag_mark("mutex0_eof");
 			if (mtk_crtc0 && mtk_crtc0->esd_ctx) {
 				if (priv && priv->data->mmsys_id == MMSYS_MT6985)
 					atomic_set(&mtk_crtc0->esd_ctx->target_time, 0);
@@ -15814,7 +15871,18 @@ static irqreturn_t mtk_disp_mutex_irq_handler(int irq, void *dev_id)
 #endif
 			if ((m_id == 0 || m_id == 3) && ddp->data->wakeup_pf_wq && mtk_crtc0) {
 				mtk_crtc0->sof_time = ktime_get();
+#ifdef OPLUS_FEATURE_DISPLAY_APOLLO
+				mutex_sof_ns = ktime_get();
+#endif /* OPLUS_FEATURE_DISPLAY_APOLLO */
 				mtk_wakeup_pf_wq(m_id);
+				#ifdef OPLUS_FEATURE_DISPLAY_ADFR
+				last_rdma_start_time = sched_clock();
+				mtk_drm_trace_c("%d|smutex sof|%d", g_commit_pid, 1);
+				mtk_drm_trace_c("%d|smutex sof|%d", g_commit_pid, 0);
+				if (oplus_adfr_fakeframe_is_enable()) {
+					oplus_adfr_cancel_fakeframe();
+				}
+				#endif /* OPLUS_FEATURE_DISPLAY_ADFR */
 			}
 			if (disp_helper_get_stage() == DISP_HELPER_STAGE_NORMAL) {
 				irq_debug[3] = sched_clock();
@@ -18684,6 +18752,9 @@ SKIP_OVLSYS_CONFIG:
 		DDPAEE("%s:%d, failed to request irq:%d ret:%d\n",
 				__func__, __LINE__,
 				irq, ret);
+#ifdef OPLUS_FEATURE_DISPLAY
+		mm_fb_display_kevent("DisplayDriverID@@504$$", MM_FB_KEY_RATELIMIT_1H, "mtk_ddp_probe failed to request irq:%d ret:%d", irq, ret);
+#endif
 		return ret;
 	}
 

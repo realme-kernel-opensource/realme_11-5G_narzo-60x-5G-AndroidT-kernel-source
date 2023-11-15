@@ -12,6 +12,10 @@
 
 #define MTK_CAM_INITIAL_REQ_SYNC 0
 
+#ifndef OPLUS_FEATURE_CAMERA_COMMON
+#define OPLUS_FEATURE_CAMERA_COMMON
+#endif /* OPLUS_FEATURE_CAMERA_COMMON */
+
 struct mtk_cam_device;
 struct mtk_raw_device;
 

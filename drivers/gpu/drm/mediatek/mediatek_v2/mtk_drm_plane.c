@@ -153,6 +153,10 @@ static struct mtk_drm_property mtk_plane_property[PLANE_PROP_MAX] = {
 	{DRM_MODE_PROP_ATOMIC, "BUFFER_ALLOC_ID", 0, ULONG_MAX, 0},	/* 10 */
 	{DRM_MODE_PROP_ATOMIC, "OVL_CSC_SET_BRIGHTNESS", 0, ULONG_MAX, 0},
 	{DRM_MODE_PROP_ATOMIC, "OVL_CSC_SET_COLORTRANSFORM", 0, ULONG_MAX, 0},
+#ifdef OPLUS_FEATURE_DISPLAY_PANELCHAPLIN
+	{DRM_MODE_PROP_ATOMIC, "IS_BT2020", 0, UINT_MAX, 0},
+#endif
+
 };
 
 static void mtk_plane_reset(struct drm_plane *plane)
@@ -339,6 +343,11 @@ static int mtk_plane_atomic_check(struct drm_plane *plane,
 				mtk_drm_crtc_avail_disp_mode(new_plane_state->crtc,
 					mtk_state->prop_val[CRTC_PROP_DISP_MODE_IDX]);
 
+			if (IS_ERR_OR_NULL(mode)) {
+				DDPPR_ERR("%s invalid disp mode %u\n",
+					__func__, mtk_state->prop_val[CRTC_PROP_DISP_MODE_IDX]);
+				return 0;
+			}
 			DDPDBG("%s++ from %u to %u\n", __func__,
 					old_mtk_state->prop_val[CRTC_PROP_DISP_MODE_IDX],
 					mtk_state->prop_val[CRTC_PROP_DISP_MODE_IDX]);

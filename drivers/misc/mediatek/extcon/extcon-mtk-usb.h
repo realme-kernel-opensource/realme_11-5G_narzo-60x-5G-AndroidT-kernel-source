@@ -44,3 +44,6 @@ enum {
 	DUAL_PROP_PR_SNK,
 	DUAL_PROP_PR_NONE,
 };
+
+extern void mt_usb_connect_v1(void);
+extern void mt_usb_disconnect_v1(void);

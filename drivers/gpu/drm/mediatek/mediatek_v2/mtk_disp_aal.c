@@ -94,7 +94,16 @@ static atomic_t g_force_delay_check_trig = ATOMIC_INIT(0);
 static struct workqueue_struct *aal_flip_wq;
 static struct workqueue_struct *aal_refresh_wq;
 
+#ifdef OPLUS_FEATURE_DISPLAY
+extern unsigned int oplus_display_brightness;
+#endif /* OPLUS_FEATURE_DISPLAY  */
+
 static int g_aal_backlight_set;
+
+#ifdef OPLUS_FEATURE_DISPLAY
+extern bool g_aal_probe_ready;
+#endif
+
 
 enum AAL_UPDATE_HIST {
 	UPDATE_NONE = 0,
@@ -463,6 +472,9 @@ void disp_aal_notify_backlight_changed(int trans_backlight, int max_backlight)
 		service_flags = AAL_SERVICE_FORCE_UPDATE;
 
 	if (trans_backlight == 0) {
+#ifdef OPLUS_FEATURE_DISPLAY
+		oplus_display_brightness = 0;
+#endif /* OPLUS_FEATURE_DISPLAY  */
 		g_aal_backlight_set = trans_backlight;
 		mtk_leds_brightness_set("lcd-backlight", 0, 0, (0X1<<SET_BACKLIGHT_LEVEL));
 		/* set backlight = 0 may be not from AAL, */
@@ -906,7 +918,8 @@ static void mtk_aal_config(struct mtk_ddp_comp *comp,
 	//disp_aal_flip_sram(comp, handle, __func__);
 
 	if (g_dsi_switched) {
-		g_aal_need_config = true;
+		if (g_aal_fo->mtk_dre30_support)
+			g_aal_need_config = true;
 		g_dsi_switched = false;
 	}
 	AALWC_LOG("AAL_CFG=0x%x  compid:%d\n",
@@ -1215,14 +1228,17 @@ static void disp_aal_dre3_config(struct mtk_ddp_comp *comp,
 {
 	struct mtk_disp_aal *aal_data = comp_to_aal(comp);
 	phys_addr_t dre3_pa = mtk_aal_dre3_pa(comp);
-	int width = init_regs->isdual ? init_regs->width / 2 : init_regs->width;
+	//int width = init_regs->isdual ? init_regs->width / 2 : init_regs->width;
 	int dre_alg_mode = 1;
 
-	DDPMSG("%s, width:%d, height:%d\n", __func__, width, init_regs->height);
-	if (g_aal_size.width == width && g_aal_size.height == init_regs->height)
+	DDPMSG("%s, width:%d, height:%d\n", __func__, init_regs->width, init_regs->height);
+	if (g_aal_size.width == init_regs->width && g_aal_size.height == init_regs->height)
 		g_aal_need_config = false;
 
 	AALFLOW_LOG("start, bitShift: %d  compId%d\n", aal_data->data->bitShift, comp->id);
+
+
+	//pr_notice(" width = %d init_regs->isdual = %d\n", width, init_regs->isdual);
 
 	cmdq_pkt_write(handle, comp->cmdq_base,
 		dre3_pa + DISP_AAL_DRE_BLOCK_INFO_01,
@@ -1476,6 +1492,7 @@ int mtk_drm_ioctl_aal_init_reg(struct drm_device *dev, void *data,
 	struct drm_crtc *crtc = private->crtc[0];
 
 	g_aal_data->crtc = crtc;
+	DDPMSG("%s in\n", __func__);
 
 	return mtk_crtc_user_cmd(crtc, comp, INIT_REG, data);
 }
@@ -1782,7 +1799,6 @@ int mtk_drm_ioctl_aal_set_param(struct drm_device *dev, void *data,
 	/* Not need to protect g_aal_param, */
 	/* since only AALService can set AAL parameters. */
 	memcpy(&g_aal_param, param, sizeof(*param));
-
 	prev_backlight = g_aal_backlight_set;
 	g_aal_backlight_set = g_aal_param.FinalBacklight;
 
@@ -1805,7 +1821,9 @@ int mtk_drm_ioctl_aal_set_param(struct drm_device *dev, void *data,
 			AALAPI_LOG("bl = %d, silky_bright_flag = %d, ELVSSPN = %u, flag = %u",
 				g_aal_backlight_set, g_aal_param.silky_bright_flag,
 				g_aal_ess20_spect_param.ELVSSPN, g_aal_ess20_spect_param.flag);
-
+#ifdef OPLUS_FEATURE_DISPLAY
+			oplus_display_brightness = g_aal_backlight_set;
+#endif /* OPLUS_FEATURE_DISPLAY  */
 			mtk_leds_brightness_set("lcd-backlight", g_aal_backlight_set,
 					g_aal_ess20_spect_param.ELVSSPN,
 					g_aal_ess20_spect_param.flag);
@@ -4113,6 +4131,9 @@ static int mtk_disp_aal_probe(struct platform_device *pdev)
 		wake_up_process(aal_sof_irq_event_task);
 	}
 
+#ifdef OPLUS_FEATURE_DISPLAY
+	g_aal_probe_ready = true;
+#endif
 	AALFLOW_LOG("-\n");
 	return ret;
 }
